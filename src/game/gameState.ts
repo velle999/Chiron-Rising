@@ -15,6 +15,59 @@ export interface Resources {
   energy: number;
 }
 
+// ─── Production Catalog ──────────────────────────────────────
+
+export interface BuildItem {
+  key: string;
+  name: string;
+  category: "unit" | "facility" | "project";
+  cost: number;           // minerals to build
+  description: string;
+  maintenance?: number;   // energy per turn (facilities)
+  unitType?: UnitType;    // if unit
+}
+
+export const BUILD_CATALOG: BuildItem[] = [
+  // ── Units ──
+  { key: "unit_colony",    name: "Colony Pod",      category: "unit", cost: 30,  description: "Founds a new base",           unitType: UnitType.Colony },
+  { key: "unit_former",    name: "Terraformer",     category: "unit", cost: 18,  description: "Builds improvements on tiles", unitType: UnitType.Former },
+  { key: "unit_scout",     name: "Scout Patrol",    category: "unit", cost: 8,   description: "Fast exploration unit",        unitType: UnitType.Scout },
+  { key: "unit_infantry",  name: "Garrison",        category: "unit", cost: 12,  description: "Standard combat unit",         unitType: UnitType.Infantry },
+  { key: "unit_speeder",   name: "Speeder",         category: "unit", cost: 16,  description: "Fast attack vehicle",          unitType: UnitType.Speeder },
+
+  // ── Facilities ──
+  { key: "recycling_tanks",    name: "Recycling Tanks",    category: "facility", cost: 40,  maintenance: 0, description: "+1 nutrient, mineral, energy at base square" },
+  { key: "recreation_commons", name: "Recreation Commons", category: "facility", cost: 40,  maintenance: 1, description: "Reduces drones by 2" },
+  { key: "network_node",       name: "Network Node",       category: "facility", cost: 80,  maintenance: 1, description: "+50% labs output at base" },
+  { key: "energy_bank",        name: "Energy Bank",        category: "facility", cost: 80,  maintenance: 1, description: "+50% economy at base" },
+  { key: "perimeter_defense",  name: "Perimeter Defense",  category: "facility", cost: 50,  maintenance: 0, description: "Doubles defense of units in base" },
+  { key: "command_center",     name: "Command Center",     category: "facility", cost: 40,  maintenance: 1, description: "+2 morale for land units built here" },
+  { key: "children_creche",    name: "Children's Creche",  category: "facility", cost: 50,  maintenance: 1, description: "+2 Growth, +2 Efficiency at this base" },
+  { key: "tree_farm",          name: "Tree Farm",          category: "facility", cost: 120, maintenance: 3, description: "+50% psych and economy from forests" },
+  { key: "hab_complex",        name: "Hab Complex",        category: "facility", cost: 80,  maintenance: 2, description: "Allows population to exceed 7" },
+  { key: "research_hospital",  name: "Research Hospital",  category: "facility", cost: 120, maintenance: 3, description: "+50% labs, -1 drone" },
+
+  // ── Stockpile ──
+  { key: "stockpile_energy",   name: "Stockpile Energy",   category: "facility", cost: 0,   maintenance: 0, description: "Convert excess minerals to energy" },
+];
+
+export function getBuildItem(key: string): BuildItem | undefined {
+  return BUILD_CATALOG.find(b => b.key === key);
+}
+
+// Items available for a base to build (exclude already-built facilities)
+export function getAvailableBuilds(base: Base): BuildItem[] {
+  return BUILD_CATALOG.filter(item => {
+    // Can always build units
+    if (item.category === "unit") return true;
+    // Stockpile always available
+    if (item.key === "stockpile_energy") return true;
+    // Can't build a facility you already have
+    if (item.category === "facility" && base.facilities.includes(item.key)) return false;
+    return true;
+  });
+}
+
 // ─── Base (City) ─────────────────────────────────────────────
 
 export interface Base {
@@ -27,8 +80,10 @@ export interface Base {
   storedNutrients: number;
   storedMinerals: number;
   facilities: string[];
-  productionQueue: string[];
-  workedTiles: string[];  // hex keys of tiles being worked
+  productionQueue: string[];     // keys from BUILD_CATALOG
+  currentBuild: string | null;   // key currently being built
+  buildProgress: number;         // minerals accumulated toward current build
+  workedTiles: string[];         // hex keys of tiles being worked
 }
 
 // ─── Unit ────────────────────────────────────────────────────
@@ -519,6 +574,8 @@ export function foundBase(state: GameState, unitId: string, name: string): GameS
     storedMinerals: 0,
     facilities: ["recycling_tanks"],
     productionQueue: [],
+    currentBuild: "unit_scout",    // Default: build a scout first
+    buildProgress: 0,
     workedTiles: [key],
   };
 
@@ -560,6 +617,29 @@ export function foundBase(state: GameState, unitId: string, name: string): GameS
   }
 
   return newState;
+}
+
+// ─── Production Management ──────────────────────────────────
+
+export function changeProduction(state: GameState, baseId: string, buildKey: string): GameState {
+  const base = state.bases.get(baseId);
+  if (!base) return state;
+
+  const item = getBuildItem(buildKey);
+  if (!item) return state;
+
+  // Switching production loses some progress (keep up to 10 minerals)
+  const carryOver = Math.min(base.buildProgress, 10);
+
+  const newBases = new Map(state.bases);
+  newBases.set(baseId, {
+    ...base,
+    currentBuild: buildKey,
+    buildProgress: carryOver,
+  });
+
+  const log = [...state.log, `${base.name}: Now building ${item.name}`];
+  return { ...state, bases: newBases, log };
 }
 
 // ─── Turn Processing ─────────────────────────────────────────
@@ -616,11 +696,63 @@ export function endTurn(state: GameState): GameState {
       log.push(`Starvation in ${base.name}!`);
     }
 
+    // ── Production ──
+    let newBuildProgress = base.buildProgress + totalMinerals;
+    let newCurrentBuild = base.currentBuild;
+    let newFacilities = [...base.facilities];
+    let newQueue = [...base.productionQueue];
+
+    if (newCurrentBuild) {
+      const item = getBuildItem(newCurrentBuild);
+
+      // Stockpile energy: convert minerals to energy
+      if (newCurrentBuild === "stockpile_energy") {
+        const energyGain = Math.floor(totalMinerals / 2);
+        const fIdx = base.owner;
+        if (fIdx >= 0 && fIdx < newState.factions.length) {
+          newState.factions = newState.factions.map((f, i) =>
+            i === fIdx ? { ...f, energy: f.energy + energyGain } : f
+          );
+        }
+        newBuildProgress = 0;
+      } else if (item && newBuildProgress >= item.cost) {
+        // Production complete!
+        newBuildProgress -= item.cost;
+
+        if (item.category === "unit" && item.unitType) {
+          // Create the unit at the base
+          const newUnit = createUnit(item.unitType, base.q, base.r, base.owner);
+          newUnits.set(newUnit.id, newUnit);
+          log.push(`${base.name}: ${item.name} completed!`);
+        } else if (item.category === "facility") {
+          // Add facility to base
+          if (!newFacilities.includes(item.key)) {
+            newFacilities.push(item.key);
+          }
+          log.push(`${base.name}: ${item.name} completed!`);
+        }
+
+        // Carry over excess minerals (up to 10)
+        newBuildProgress = Math.min(newBuildProgress, 10);
+
+        // Pop next from queue, or set to null
+        if (newQueue.length > 0) {
+          newCurrentBuild = newQueue.shift()!;
+        } else {
+          newCurrentBuild = null;
+        }
+      }
+    }
+
     newBases.set(id, {
       ...base,
       population: newPop,
       storedNutrients: Math.max(0, newStoredNutrients),
       storedMinerals: base.storedMinerals + totalMinerals,
+      facilities: newFacilities,
+      currentBuild: newCurrentBuild,
+      buildProgress: newBuildProgress,
+      productionQueue: newQueue,
     });
 
     // Add energy to faction treasury

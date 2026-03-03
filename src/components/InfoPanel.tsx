@@ -2,7 +2,7 @@
 // CHIRON RISING — Info Panel (Sidebar)
 // ═══════════════════════════════════════════════════════════════
 
-import { GameState, getTileResources, Unit, UnitType, Base } from "../game/gameState";
+import { GameState, getTileResources, Unit, UnitType, Base, getBuildItem, getAvailableBuilds, BuildItem } from "../game/gameState";
 import { hexKey, MapTile, Terrain, Moisture } from "../game/hexMap";
 
 interface InfoPanelProps {
@@ -10,9 +10,10 @@ interface InfoPanelProps {
   onFoundBase: () => void;
   onBuildImprovement: (type: string) => void;
   onEndTurn: () => void;
+  onChangeProduction: (baseId: string, buildKey: string) => void;
 }
 
-export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, onEndTurn }: InfoPanelProps) {
+export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, onEndTurn, onChangeProduction }: InfoPanelProps) {
   const { selectedTile, selectedUnit, map, units, bases, factions, currentFaction, turn, year, log } = gameState;
   const playerFaction = factions[currentFaction];
 
@@ -96,19 +97,95 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
         </div>
       )}
 
-      {/* Base Info */}
+      {/* Base Info + Production */}
       {baseAtTile && (
         <div style={styles.section}>
           <div style={styles.sectionTitle}>BASE</div>
           <div style={styles.baseName}>{baseAtTile.name}</div>
           <div style={styles.dim}>
             Pop: {baseAtTile.population} ·
-            Minerals: {baseAtTile.storedMinerals} ·
             Food: {baseAtTile.storedNutrients}
           </div>
           <div style={styles.dim}>
             Facilities: {baseAtTile.facilities.join(", ") || "none"}
           </div>
+
+          {/* Current Production */}
+          {baseAtTile.owner === currentFaction && (() => {
+            const buildItem = baseAtTile.currentBuild ? getBuildItem(baseAtTile.currentBuild) : null;
+            const cost = buildItem?.cost || 0;
+            const progress = baseAtTile.buildProgress;
+            const pct = cost > 0 ? Math.min(1, progress / cost) : 0;
+            const turnsLeft = cost > 0 ? Math.max(1, Math.ceil((cost - progress) / Math.max(1, 1))) : 0; // rough estimate
+
+            return (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ color: "#88aacc", fontSize: 11, marginBottom: 4 }}>BUILDING:</div>
+                <div style={{ color: "#ccddee", fontSize: 13, fontWeight: 600 }}>
+                  {buildItem ? buildItem.name : "— Nothing —"}
+                </div>
+                {buildItem && cost > 0 && (
+                  <>
+                    <div style={{
+                      width: "100%", height: 6, background: "#0a1020",
+                      borderRadius: 3, marginTop: 4, border: "1px solid #1a2a44",
+                    }}>
+                      <div style={{
+                        width: `${pct * 100}%`, height: "100%",
+                        background: `linear-gradient(90deg, #cc8833, #ffcc44)`,
+                        borderRadius: 3, transition: "width 0.3s",
+                      }} />
+                    </div>
+                    <div style={{ color: "#667788", fontSize: 10, marginTop: 2 }}>
+                      {progress}/{cost} minerals
+                    </div>
+                  </>
+                )}
+                {/* Change production button */}
+                <button
+                  style={{ ...styles.actionBtn, marginTop: 6, fontSize: 11, padding: "3px 8px" }}
+                  onClick={() => {
+                    // Toggle production picker
+                    const el = document.getElementById("prod-picker-" + baseAtTile.id);
+                    if (el) el.style.display = el.style.display === "none" ? "block" : "none";
+                  }}
+                >
+                  Change Production
+                </button>
+
+                {/* Production Picker (hidden by default) */}
+                <div id={"prod-picker-" + baseAtTile.id} style={{ display: "none", marginTop: 6 }}>
+                  <div style={{ color: "#667788", fontSize: 10, marginBottom: 4 }}>SELECT BUILD ORDER:</div>
+                  <div style={{ maxHeight: 200, overflowY: "auto" }}>
+                    {getAvailableBuilds(baseAtTile).map(item => (
+                      <button
+                        key={item.key}
+                        style={{
+                          ...styles.buildPickerBtn,
+                          borderColor: item.key === baseAtTile.currentBuild ? "#cc8833" : "#1a2a44",
+                        }}
+                        onClick={() => {
+                          onChangeProduction(baseAtTile.id, item.key);
+                          const el = document.getElementById("prod-picker-" + baseAtTile.id);
+                          if (el) el.style.display = "none";
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
+                          <span style={{ color: "#ccddee", fontSize: 12 }}>{item.name}</span>
+                          <span style={{ color: "#cc8833", fontSize: 11 }}>
+                            {item.cost > 0 ? `${item.cost}⛏` : "∞"}
+                          </span>
+                        </div>
+                        <div style={{ color: "#556677", fontSize: 10, textAlign: "left" }}>
+                          {item.description}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -294,5 +371,18 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#556677",
     padding: "2px 0",
     borderBottom: "1px solid #0a0f18",
+  },
+  buildPickerBtn: {
+    display: "flex",
+    flexDirection: "column" as const,
+    width: "100%",
+    background: "#0a1020",
+    border: "1px solid #1a2a44",
+    padding: "5px 8px",
+    marginBottom: 2,
+    cursor: "pointer",
+    textAlign: "left" as const,
+    transition: "all 0.15s",
+    gap: 1,
   },
 };

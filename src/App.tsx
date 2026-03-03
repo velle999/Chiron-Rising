@@ -8,7 +8,7 @@ import InfoPanel from "./components/InfoPanel";
 import { hexKey } from "./game/hexMap";
 import {
   GameState, initializeGame, moveUnit, foundBase, endTurn,
-  UnitType, FACTION_DEFS
+  changeProduction, UnitType, FACTION_DEFS
 } from "./game/gameState";
 
 // ─── Base Name Generator ─────────────────────────────────────
@@ -134,6 +134,11 @@ export default function App() {
     setGameState(endTurn(gameState));
   }, [gameState]);
 
+  const handleChangeProduction = useCallback((baseId: string, buildKey: string) => {
+    if (!gameState) return;
+    setGameState(changeProduction(gameState, baseId, buildKey));
+  }, [gameState]);
+
   // ─── Keyboard Shortcuts ────────────────────────────────
 
   useEffect(() => {
@@ -225,6 +230,7 @@ export default function App() {
         onFoundBase={handleFoundBase}
         onBuildImprovement={handleBuildImprovement}
         onEndTurn={handleEndTurn}
+        onChangeProduction={handleChangeProduction}
       />
     </div>
   );
