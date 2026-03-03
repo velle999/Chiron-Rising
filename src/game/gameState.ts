@@ -75,6 +75,12 @@ export interface FactionState {
 
 // ─── Game State ──────────────────────────────────────────────
 
+// Visibility state per faction
+// "hidden"   = never seen (black)
+// "explored" = seen before but no current vision (dimmed, shows terrain but not units)
+// "visible"  = currently in line of sight (full detail)
+export type TileVisibility = "hidden" | "explored" | "visible";
+
 export interface GameState {
   turn: number;
   year: number;
@@ -88,6 +94,10 @@ export interface GameState {
   currentFaction: number;
   phase: "playing" | "menu" | "diplomacy";
   log: string[];
+  // Per-faction visibility: factionIndex -> Set of hexKeys that have been explored
+  explored: Map<number, Set<string>>;
+  // Current turn visibility (recalculated each turn): Set of hexKeys currently visible
+  visible: Set<string>;
 }
 
 // ─── Faction Definitions ─────────────────────────────────────
@@ -108,6 +118,78 @@ export const FACTION_DEFS: FactionDef[] = [
   { key: "BELIEVE",  name: "The Lord's Believers",      leaderName: "Sister Miriam Godwinson",   color: "#cc66cc" },
   { key: "PEACE",    name: "The Peacekeeping Forces",   leaderName: "Commissioner Pravin Lal",   color: "#3388dd" },
 ];
+
+// ─── Visibility System ───────────────────────────────────────
+
+const VISION_RANGE_UNIT = 2;    // Units see 2 hexes out
+const VISION_RANGE_BASE = 3;    // Bases see 3 hexes out  
+const VISION_RANGE_SCOUT = 3;   // Scouts see further
+
+function getVisionRange(unitType: UnitType): number {
+  if (unitType === UnitType.Scout) return VISION_RANGE_SCOUT;
+  return VISION_RANGE_UNIT;
+}
+
+// Get all hex keys within radius of a position
+function getHexesInRadius(q: number, r: number, radius: number, mapWidth: number, mapHeight: number): string[] {
+  const results: string[] = [];
+  for (let dq = -radius; dq <= radius; dq++) {
+    for (let dr = Math.max(-radius, -dq - radius); dr <= Math.min(radius, -dq + radius); dr++) {
+      let tq = q + dq;
+      let tr = r + dr;
+      // Cylindrical wrapping (horizontal)
+      if (tq < 0) tq += mapWidth;
+      if (tq >= mapWidth) tq -= mapWidth;
+      // Vertical bounds
+      if (tr >= 0 && tr < mapHeight) {
+        results.push(hexKey(tq, tr));
+      }
+    }
+  }
+  return results;
+}
+
+// Calculate currently visible hexes for a faction
+export function calculateVisibility(state: GameState, factionIndex: number): Set<string> {
+  const visible = new Set<string>();
+  const { map, units, bases } = state;
+
+  // Vision from units
+  for (const [, unit] of units) {
+    if (unit.owner === factionIndex) {
+      const range = getVisionRange(unit.type);
+      const hexes = getHexesInRadius(unit.q, unit.r, range, map.width, map.height);
+      hexes.forEach(k => visible.add(k));
+    }
+  }
+
+  // Vision from bases
+  for (const [, base] of bases) {
+    if (base.owner === factionIndex) {
+      const hexes = getHexesInRadius(base.q, base.r, VISION_RANGE_BASE, map.width, map.height);
+      hexes.forEach(k => visible.add(k));
+    }
+  }
+
+  return visible;
+}
+
+// Update explored set with current visibility
+function updateExplored(explored: Map<number, Set<string>>, factionIndex: number, visible: Set<string>): Map<number, Set<string>> {
+  const newExplored = new Map(explored);
+  const factionExplored = new Set(newExplored.get(factionIndex) || []);
+  visible.forEach(k => factionExplored.add(k));
+  newExplored.set(factionIndex, factionExplored);
+  return newExplored;
+}
+
+// Get visibility state for a specific tile for the current player
+export function getTileVisibility(state: GameState, hexKey: string): TileVisibility {
+  if (state.visible.has(hexKey)) return "visible";
+  const factionExplored = state.explored.get(state.currentFaction);
+  if (factionExplored && factionExplored.has(hexKey)) return "explored";
+  return "hidden";
+}
 
 // ─── Initialization ──────────────────────────────────────────
 
@@ -225,7 +307,13 @@ export function initializeGame(
     }
   }
 
-  return {
+  // Initialize visibility
+  const explored = new Map<number, Set<string>>();
+  for (let i = 0; i < selectedDefs.length; i++) {
+    explored.set(i, new Set<string>());
+  }
+
+  const initialState: GameState = {
     turn: 1,
     year: 2100,
     map,
@@ -238,7 +326,23 @@ export function initializeGame(
     currentFaction: playerFactionIndex,
     phase: "playing",
     log: ["Year 2100. Planetfall. The Unity has been lost. You must survive."],
+    explored,
+    visible: new Set(),
   };
+
+  // Calculate initial visibility for all factions
+  for (let i = 0; i < selectedDefs.length; i++) {
+    const vis = calculateVisibility(initialState, i);
+    const factionExplored = new Set(explored.get(i) || []);
+    vis.forEach(k => factionExplored.add(k));
+    explored.set(i, factionExplored);
+  }
+
+  // Set current player's visibility
+  initialState.visible = calculateVisibility(initialState, playerFactionIndex);
+  initialState.explored = explored;
+
+  return initialState;
 }
 
 // ─── Tile Resource Calculation ───────────────────────────────
@@ -345,7 +449,16 @@ export function moveUnit(state: GameState, unitId: string, toQ: number, toR: num
     movesLeft: unit.movesLeft - 1,
   });
 
-  return { ...state, units: newUnits };
+  let newState = { ...state, units: newUnits };
+  
+  // Recalculate visibility after move
+  if (unit.owner === state.currentFaction) {
+    const newVisible = calculateVisibility(newState, state.currentFaction);
+    const newExplored = updateExplored(state.explored, state.currentFaction, newVisible);
+    newState = { ...newState, visible: newVisible, explored: newExplored };
+  }
+
+  return newState;
 }
 
 function resolveCombat(state: GameState, attackerId: string, defenderId: string): GameState {
@@ -430,7 +543,7 @@ export function foundBase(state: GameState, unitId: string, name: string): GameS
 
   const log = [...state.log, `${name} founded!`];
 
-  return {
+  let newState = {
     ...state,
     bases: newBases,
     units: newUnits,
@@ -438,6 +551,15 @@ export function foundBase(state: GameState, unitId: string, name: string): GameS
     log,
     selectedUnit: null,
   };
+
+  // Recalculate visibility (base gives vision)
+  if (unit.owner === state.currentFaction) {
+    const newVisible = calculateVisibility(newState, state.currentFaction);
+    const newExplored = updateExplored(state.explored, state.currentFaction, newVisible);
+    newState = { ...newState, visible: newVisible, explored: newExplored };
+  }
+
+  return newState;
 }
 
 // ─── Turn Processing ─────────────────────────────────────────
@@ -525,7 +647,7 @@ export function endTurn(state: GameState): GameState {
     }
   }
 
-  return {
+  let finalState = {
     ...newState,
     turn: state.turn + 1,
     year: state.year + 1,
@@ -533,4 +655,11 @@ export function endTurn(state: GameState): GameState {
     bases: newBases,
     log,
   };
+
+  // Recalculate visibility for current faction
+  const newVisible = calculateVisibility(finalState, state.currentFaction);
+  const newExplored = updateExplored(finalState.explored, state.currentFaction, newVisible);
+  finalState = { ...finalState, visible: newVisible, explored: newExplored };
+
+  return finalState;
 }

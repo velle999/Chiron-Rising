@@ -8,7 +8,7 @@ import {
   hexToPixel, hexCorners, pixelToHex, hexKey, hexNeighbors,
   MapTile, Terrain, Moisture,
 } from "../game/hexMap";
-import { GameState, UnitType } from "../game/gameState";
+import { GameState, UnitType, getTileVisibility } from "../game/gameState";
 
 interface HexMapProps {
   gameState: GameState;
@@ -384,40 +384,97 @@ export default function HexMap({ gameState, onTileClick, onTileRightClick }: Hex
     const vb = (-camera.y + height / 2) / zoom + HEX_SIZE * 2;
 
     // Pass 1: Terrain
-    for (const [, tile] of map.tiles) {
+    for (const [key, tile] of map.tiles) {
       const c = hexToPixel({ q: tile.q, r: tile.r }, HEX_SIZE);
       if (c.x < vl || c.x > vr || c.y < vt || c.y > vb) continue;
+
+      const vis = getTileVisibility(gameState, key);
+      if (vis === "hidden") {
+        // Draw black hex
+        const corners = hexCorners(c, HEX_SIZE);
+        ctx.fillStyle = "#030508";
+        ctx.beginPath();
+        corners.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+        ctx.closePath();
+        ctx.fill();
+        // Subtle edge to show hex grid in fog
+        ctx.strokeStyle = "#0a0f1808";
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+        continue;
+      }
+
       drawTile(ctx, c, tile, HEX_SIZE, time);
+
+      // Explored but not currently visible = dim overlay
+      if (vis === "explored") {
+        const corners = hexCorners(c, HEX_SIZE);
+        ctx.fillStyle = "rgba(4, 8, 16, 0.55)";
+        ctx.beginPath();
+        corners.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+        ctx.closePath();
+        ctx.fill();
+      }
     }
 
-    // Pass 2: Coastlines
-    for (const [, tile] of map.tiles) {
+    // Pass 2: Coastlines (only on visible/explored tiles)
+    for (const [key, tile] of map.tiles) {
       if (isWater(tile.terrain)) continue;
+      const vis = getTileVisibility(gameState, key);
+      if (vis === "hidden") continue;
       const c = hexToPixel({ q: tile.q, r: tile.r }, HEX_SIZE);
       if (c.x < vl || c.x > vr || c.y < vt || c.y > vb) continue;
+
+      const opacity = vis === "explored" ? "18" : "30";
+      const glowOpacity = vis === "explored" ? "08" : "12";
 
       const neighbors = hexNeighbors({ q: tile.q, r: tile.r });
       const corners = hexCorners(c, HEX_SIZE);
-      let hasCoast = false;
       neighbors.forEach((n, i) => {
         const nt = map.tiles.get(hexKey(n.q, n.r));
         if (!nt || isWater(nt.terrain)) {
-          hasCoast = true;
           const c1 = corners[i];
           const c2 = corners[(i + 1) % 6];
-          ctx.strokeStyle = "#88bbcc30";
+          ctx.strokeStyle = "#88bbcc" + opacity;
           ctx.lineWidth = 1.5;
           ctx.beginPath(); ctx.moveTo(c1.x, c1.y); ctx.lineTo(c2.x, c2.y); ctx.stroke();
-          ctx.strokeStyle = "#88bbcc12";
+          ctx.strokeStyle = "#88bbcc" + glowOpacity;
           ctx.lineWidth = 4;
           ctx.beginPath(); ctx.moveTo(c1.x, c1.y); ctx.lineTo(c2.x, c2.y); ctx.stroke();
         }
       });
     }
 
-    // Pass 3: Territory borders
-    for (const [, tile] of map.tiles) {
+    // Pass 2.5: Fog of war edge glow (boundary between explored/visible and hidden)
+    for (const [key, tile] of map.tiles) {
+      const vis = getTileVisibility(gameState, key);
+      if (vis === "hidden") continue;
+      const c = hexToPixel({ q: tile.q, r: tile.r }, HEX_SIZE);
+      if (c.x < vl || c.x > vr || c.y < vt || c.y > vb) continue;
+
+      const corners = hexCorners(c, HEX_SIZE);
+      hexNeighbors({ q: tile.q, r: tile.r }).forEach((n, i) => {
+        const nKey = hexKey(n.q, n.r);
+        const nVis = getTileVisibility(gameState, nKey);
+        if (nVis === "hidden") {
+          const c1 = corners[i];
+          const c2 = corners[(i + 1) % 6];
+          // Subtle fog edge
+          ctx.strokeStyle = "#0a1420aa";
+          ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.moveTo(c1.x, c1.y); ctx.lineTo(c2.x, c2.y); ctx.stroke();
+          ctx.strokeStyle = "#18283844";
+          ctx.lineWidth = 6;
+          ctx.beginPath(); ctx.moveTo(c1.x, c1.y); ctx.lineTo(c2.x, c2.y); ctx.stroke();
+        }
+      });
+    }
+
+    // Pass 3: Territory borders (only visible/explored)
+    for (const [key, tile] of map.tiles) {
       if (tile.owner === null || tile.owner < 0) continue;
+      const vis = getTileVisibility(gameState, key);
+      if (vis === "hidden") continue;
       const c = hexToPixel({ q: tile.q, r: tile.r }, HEX_SIZE);
       if (c.x < vl || c.x > vr || c.y < vt || c.y > vb) continue;
       const faction = factions[tile.owner];
@@ -437,8 +494,10 @@ export default function HexMap({ gameState, onTileClick, onTileRightClick }: Hex
       });
     }
 
-    // Pass 4: Selections & hover
+    // Pass 4: Selections & hover (only on explored/visible tiles)
     for (const [key, tile] of map.tiles) {
+      const vis = getTileVisibility(gameState, key);
+      if (vis === "hidden") continue;
       const c = hexToPixel({ q: tile.q, r: tile.r }, HEX_SIZE);
       if (c.x < vl || c.x > vr || c.y < vt || c.y > vb) continue;
       const corners = hexCorners(c, HEX_SIZE);
@@ -476,12 +535,19 @@ export default function HexMap({ gameState, onTileClick, onTileRightClick }: Hex
       }
     }
 
-    // Pass 6: Bases
+    // Pass 6: Bases (only visible, or explored for own bases)
     for (const [, base] of bases) {
+      const bKey = hexKey(base.q, base.r);
+      const vis = getTileVisibility(gameState, bKey);
+      // Only show bases we can currently see, or our own bases in explored territory
+      if (vis === "hidden") continue;
+      if (vis === "explored" && base.owner !== currentFaction) continue;
+
       const c = hexToPixel({ q: base.q, r: base.r }, HEX_SIZE);
       if (c.x < vl || c.x > vr || c.y < vt || c.y > vb) continue;
       const faction = factions[base.owner];
       const color = faction?.color || "#ffffff";
+      const dimAlpha = vis === "explored" ? 0.4 : 1.0;
 
       ctx.fillStyle = color + "11";
       ctx.beginPath(); ctx.arc(c.x, c.y, HEX_SIZE * 0.75, 0, Math.PI * 2); ctx.fill();
@@ -511,8 +577,13 @@ export default function HexMap({ gameState, onTileClick, onTileRightClick }: Hex
       ctx.fillText(base.name, c.x, c.y + HEX_SIZE * 0.9);
     }
 
-    // Pass 7: Units
+    // Pass 7: Units (only on currently visible tiles — no peeking in fog!)
     for (const [, unit] of units) {
+      const uKey = hexKey(unit.q, unit.r);
+      const vis = getTileVisibility(gameState, uKey);
+      // Only show units on visible tiles (own units always visible, enemies only if in sight)
+      if (vis !== "visible" && unit.owner !== currentFaction) continue;
+      if (vis === "hidden") continue;
       const c = hexToPixel({ q: unit.q, r: unit.r }, HEX_SIZE);
       if (c.x < vl || c.x > vr || c.y < vt || c.y > vb) continue;
 
@@ -554,7 +625,7 @@ export default function HexMap({ gameState, onTileClick, onTileRightClick }: Hex
     }
 
     ctx.restore();
-  }, [map, units, bases, factions, camera, zoom, hoveredTile, selectedUnit, selectedTile, currentFaction]);
+  }, [map, units, bases, factions, camera, zoom, hoveredTile, selectedUnit, selectedTile, currentFaction, gameState]);
 
   // ─── Animation Loop ──────────────────────────────────────
 
