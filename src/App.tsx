@@ -2,7 +2,7 @@
 // CHIRON RISING — Main Application
 // ═══════════════════════════════════════════════════════════════
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import HexMap from "./components/HexMap";
 import InfoPanel from "./components/InfoPanel";
 import DiplomacyScreen from "./components/DiplomacyScreen";
@@ -13,6 +13,8 @@ import {
   changeProduction, chooseResearch, changeSocialEngineering,
   setUnitOrders, UnitType, FACTION_DEFS, FactionState
 } from "./game/gameState";
+import { soundManager, playSoundsForLog } from "./audio/soundSystem";
+import { playTechVoice, playFacilityVoice, playFactionIntro, playOpeningNarration, TECH_VOICE_MAP } from "./audio/voiceSystem";
 
 // ─── Base Name Generator ─────────────────────────────────────
 
@@ -36,10 +38,24 @@ export default function App() {
   const [diplomacyTarget, setDiplomacyTarget] = useState<FactionState | null>(null);
   const [turnPrompts, setTurnPrompts] = useState<TurnPrompt[]>([]);
   const [currentPromptIndex, setCurrentPromptIndex] = useState(0);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const prevLogLength = useRef(0);
+  const audioInitialized = useRef(false);
 
   // ─── Game Setup ────────────────────────────────────────
 
   const startGame = useCallback(() => {
+    // Init audio on first user interaction
+    if (!audioInitialized.current) {
+      soundManager.init();
+      soundManager.preload([
+        "turn_complete", "prod_complete", "new_orders", "new_data",
+        "base_founded", "combat_report", "menu_click", "ok",
+        "terraform_complete", "mind_worm_attack", "resource_shortfall",
+      ]);
+      audioInitialized.current = true;
+    }
+
     const state = initializeGame(selectedFaction, 4, {
       width: 48,
       height: 32,
@@ -51,6 +67,9 @@ export default function App() {
     });
     setGameState(state);
     setShowSetup(false);
+
+    // Play opening narration
+    setTimeout(() => playOpeningNarration("f"), 500);
 
     // Check initial prompts (research needed at game start)
     const prompts = getTurnPrompts(state);
@@ -115,6 +134,7 @@ export default function App() {
     const name = prompt("Name your base:", getNextBaseName());
     if (name) {
       setGameState(foundBase(gameState, gameState.selectedUnit, name));
+      soundManager.play("base_founded");
     }
   }, [gameState]);
 
@@ -149,14 +169,75 @@ export default function App() {
 
   const handleEndTurn = useCallback(() => {
     if (!gameState) return;
+    const oldLogLen = gameState.log.length;
+    const playerFaction = gameState.factions[gameState.currentFaction];
     const newState = endTurn(gameState);
     setGameState(newState);
+
+    // Play sounds for new log entries
+    playSoundsForLog(newState.log, oldLogLen);
+    soundManager.play("turn_complete");
+
+    // Check for voice-over triggers in new log entries (player faction only)
+    const newEntries = newState.log.slice(oldLogLen);
+    for (const entry of newEntries) {
+      // Tech discovery voice-over
+      if (entry.includes("discovers") && playerFaction && entry.includes(playerFaction.name)) {
+        const techMatch = entry.match(/discovers (.+)!/);
+        if (techMatch) {
+          const techName = techMatch[1].toLowerCase();
+          // Match tech name to voice map key
+          for (const key of Object.keys(TECH_VOICE_MAP)) {
+            const normalName = key.replace(/_/g, " ");
+            if (techName === normalName || techName.startsWith(normalName.slice(0, 12))) {
+              playTechVoice(key);
+              break;
+            }
+          }
+        }
+      }
+
+      // Facility completion voice-over
+      if (entry.includes("completed!") && !entry.includes("discovers")) {
+        const facMatch = entry.match(/: (.+) completed!/);
+        if (facMatch) {
+          const itemName = facMatch[1];
+          // Try to match facility name to voice key
+          const facilityKeys: Record<string, string> = {
+            "Recycling Tanks": "recycling_tanks",
+            "Network Node": "network_node",
+            "Energy Bank": "energy_bank",
+            "Perimeter Defense": "perimeter_defense",
+            "Recreation Commons": "recreation_commons",
+            "Children's Creche": "children_creche",
+            "Command Center": "command_center",
+            "Research Hospital": "research_hospital",
+            "Tree Farm": "tree_farm",
+            "Hab Complex": "hab_complex",
+            "Biology Lab": "biology_lab",
+            "Hologram Theatre": "hologram_theatre",
+            "Fusion Lab": "fusion_lab",
+            "Aerospace Complex": "aerospace_complex",
+            "Genejack Factory": "genejack_factory",
+            "Robotic Assembly Plant": "robotic_assembly",
+            "Pressure Dome": "pressure_dome",
+            "Centauri Preserve": "centauri_preserve",
+            "Skunkworks": "skunkworks",
+          };
+          const facKey = facilityKeys[itemName];
+          if (facKey) {
+            playFacilityVoice(facKey);
+          }
+        }
+      }
+    }
 
     // Check for prompts after turn
     const prompts = getTurnPrompts(newState);
     if (prompts.length > 0) {
       setTurnPrompts(prompts);
       setCurrentPromptIndex(0);
+      soundManager.play("new_orders");
     }
   }, [gameState]);
 
@@ -311,6 +392,27 @@ export default function App() {
             {" · M.Y. "}{gameState.year}
             {" · Turn "}{gameState.turn}
           </span>
+          <button
+            style={{
+              background: "none",
+              border: "1px solid #1a2a44",
+              color: soundEnabled ? "#88aacc" : "#556677",
+              padding: "2px 8px",
+              fontSize: 12,
+              cursor: "pointer",
+              fontFamily: "'Rajdhani', sans-serif",
+              marginLeft: 8,
+            }}
+            onClick={() => {
+              const next = !soundEnabled;
+              setSoundEnabled(next);
+              soundManager.setEnabled(next);
+              if (next) soundManager.play("ok");
+            }}
+            title={soundEnabled ? "Mute sounds" : "Enable sounds"}
+          >
+            {soundEnabled ? "🔊" : "🔇"}
+          </button>
         </div>
       </div>
       <InfoPanel
@@ -324,7 +426,10 @@ export default function App() {
         onSetOrders={handleSetOrders}
         onContactFaction={(factionId: number) => {
           const target = gameState.factions[factionId];
-          if (target && !target.isHuman) setDiplomacyTarget(target);
+          if (target && !target.isHuman) {
+            setDiplomacyTarget(target);
+            playFactionIntro(target.key);
+          }
         }}
       />
       {/* Diplomacy Overlay */}
@@ -355,10 +460,12 @@ export default function App() {
               baseName={prompt.baseName || "Unknown Base"}
               completedItem={prompt.completedItem}
               onSelect={(baseId, buildKey) => {
+                soundManager.play("ok");
                 setGameState(changeProduction(gameState, baseId, buildKey));
                 advancePrompt();
               }}
               onSkip={() => {
+                soundManager.play("menu_back");
                 setGameState(changeProduction(gameState, prompt.baseId!, "stockpile_energy"));
                 advancePrompt();
               }}
@@ -371,10 +478,14 @@ export default function App() {
             <ResearchPrompt
               gameState={gameState}
               onSelect={(techKey) => {
+                soundManager.play("ok");
                 setGameState(chooseResearch(gameState, techKey));
                 advancePrompt();
               }}
-              onSkip={advancePrompt}
+              onSkip={() => {
+                soundManager.play("menu_back");
+                advancePrompt();
+              }}
             />
           );
         }

@@ -78,6 +78,25 @@ and the current game state.
 - **Enter**: End turn
 - **Escape**: Deselect
 
+## Sound Effects & Voice-Overs
+
+If you own SMAC on Steam, you can use the original sound effects and voice-overs:
+
+```bash
+# Copy both folders from your SMAC install:
+xcopy "C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Alpha Centauri\fx" public\fx\ /E
+xcopy "C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Alpha Centauri\voices" public\voices\ /E
+```
+
+**Sound effects** (~60 wav files): turn complete, production complete, combat, terraform, etc.
+**Voice-overs** (~90 mp3 files):
+- Tech discovery quotes (the iconic voiced quotes when you research a tech)
+- Facility completion quotes
+- Faction leader intro speeches (plays when opening diplomacy)
+- Opening narration (plays at game start)
+
+Without the files, the game runs silently — no errors. Toggle sound with the 🔊 button.
+
 ## Roadmap
 
 - [ ] Phase 2: Fog of war, exploration, AI unit movement
