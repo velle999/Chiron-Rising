@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { GameState, getTileResources, Unit, UnitType, Base, getBuildItem, getAvailableBuilds, BuildItem } from "../game/gameState";
+import { getTech, getResearchableTechs, calculateLabsPerTurn, Tech } from "../game/techTree";
 import { hexKey, MapTile, Terrain, Moisture } from "../game/hexMap";
 
 interface InfoPanelProps {
@@ -11,9 +12,10 @@ interface InfoPanelProps {
   onBuildImprovement: (type: string) => void;
   onEndTurn: () => void;
   onChangeProduction: (baseId: string, buildKey: string) => void;
+  onChooseResearch: (techKey: string) => void;
 }
 
-export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, onEndTurn, onChangeProduction }: InfoPanelProps) {
+export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, onEndTurn, onChangeProduction, onChooseResearch }: InfoPanelProps) {
   const { selectedTile, selectedUnit, map, units, bases, factions, currentFaction, turn, year, log } = gameState;
   const playerFaction = factions[currentFaction];
 
@@ -58,7 +60,11 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
       <div style={styles.header}>
         <div style={styles.factionName}>{playerFaction?.name || "Unknown"}</div>
         <div style={styles.yearDisplay}>M.Y. {year}</div>
-        <div style={styles.turnDisplay}>Turn {turn}</div>
+        <div style={styles.turnDisplay}>
+          Turn {turn} · {playerFaction?.discoveredTechs.length || 0} techs · {
+            Array.from(bases.values()).filter(b => b.owner === currentFaction).length
+          } bases
+        </div>
       </div>
 
       {/* Resources */}
@@ -69,6 +75,84 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
           <span style={{ color: "#88aacc" }}> Energy Credits</span>
         </div>
       </div>
+
+      {/* Research */}
+      {playerFaction && (() => {
+        const currentTech = playerFaction.currentResearch ? getTech(playerFaction.currentResearch) : null;
+        const labsPerTurn = calculateLabsPerTurn(bases, currentFaction);
+        const pct = currentTech ? Math.min(1, playerFaction.techProgress / currentTech.cost) : 0;
+        const turnsLeft = currentTech ? Math.max(1, Math.ceil((currentTech.cost - playerFaction.techProgress) / Math.max(1, labsPerTurn))) : 0;
+        const researchable = getResearchableTechs(playerFaction.discoveredTechs);
+
+        return (
+          <div style={styles.section}>
+            <div style={styles.sectionTitle}>RESEARCH</div>
+            {currentTech ? (
+              <>
+                <div style={{ color: "#ccddee", fontSize: 13, fontWeight: 600 }}>{currentTech.name}</div>
+                <div style={{
+                  width: "100%", height: 6, background: "#0a1020",
+                  borderRadius: 3, marginTop: 4, border: "1px solid #1a2a44",
+                }}>
+                  <div style={{
+                    width: `${pct * 100}%`, height: "100%",
+                    background: "linear-gradient(90deg, #3388dd, #55ccff)",
+                    borderRadius: 3, transition: "width 0.3s",
+                  }} />
+                </div>
+                <div style={{ color: "#667788", fontSize: 10, marginTop: 2 }}>
+                  {playerFaction.techProgress}/{currentTech.cost} ({labsPerTurn} labs/turn · ~{turnsLeft} turns)
+                </div>
+              </>
+            ) : (
+              <div style={{ color: "#cc6644", fontSize: 12 }}>No research selected!</div>
+            )}
+            <button
+              style={{ ...styles.actionBtn, marginTop: 6, fontSize: 11, padding: "3px 8px" }}
+              onClick={() => {
+                const el = document.getElementById("research-picker");
+                if (el) el.style.display = el.style.display === "none" ? "block" : "none";
+              }}
+            >
+              {currentTech ? "Change Research" : "Choose Research"}
+            </button>
+            <div id="research-picker" style={{ display: "none", marginTop: 6 }}>
+              <div style={{ color: "#667788", fontSize: 10, marginBottom: 4 }}>
+                AVAILABLE TECHNOLOGIES ({researchable.length}):
+              </div>
+              <div style={{ maxHeight: 180, overflowY: "auto" }}>
+                {researchable.map(tech => (
+                  <button
+                    key={tech.key}
+                    style={{
+                      ...styles.buildPickerBtn,
+                      borderColor: tech.key === playerFaction.currentResearch ? "#3388dd" : "#1a2a44",
+                    }}
+                    onClick={() => {
+                      onChooseResearch(tech.key);
+                      const el = document.getElementById("research-picker");
+                      if (el) el.style.display = "none";
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
+                      <span style={{ color: "#ccddee", fontSize: 12 }}>{tech.name}</span>
+                      <span style={{ color: "#3388dd", fontSize: 11 }}>
+                        {tech.cost} · ~{Math.ceil(tech.cost / Math.max(1, labsPerTurn))}t
+                      </span>
+                    </div>
+                    <div style={{ color: "#556677", fontSize: 10, textAlign: "left" }}>
+                      {tech.unlocks.slice(0, 2).join(", ")}
+                    </div>
+                  </button>
+                ))}
+                {researchable.length === 0 && (
+                  <div style={{ color: "#556677", fontSize: 11 }}>No technologies available yet</div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Tile Info */}
       {tile && (
@@ -157,7 +241,7 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
                 <div id={"prod-picker-" + baseAtTile.id} style={{ display: "none", marginTop: 6 }}>
                   <div style={{ color: "#667788", fontSize: 10, marginBottom: 4 }}>SELECT BUILD ORDER:</div>
                   <div style={{ maxHeight: 200, overflowY: "auto" }}>
-                    {getAvailableBuilds(baseAtTile).map(item => (
+                    {getAvailableBuilds(baseAtTile, playerFaction?.discoveredTechs || []).map(item => (
                       <button
                         key={item.key}
                         style={{

@@ -8,7 +8,7 @@ import InfoPanel from "./components/InfoPanel";
 import { hexKey } from "./game/hexMap";
 import {
   GameState, initializeGame, moveUnit, foundBase, endTurn,
-  changeProduction, UnitType, FACTION_DEFS
+  changeProduction, chooseResearch, UnitType, FACTION_DEFS
 } from "./game/gameState";
 
 // ─── Base Name Generator ─────────────────────────────────────
@@ -139,6 +139,11 @@ export default function App() {
     setGameState(changeProduction(gameState, baseId, buildKey));
   }, [gameState]);
 
+  const handleChooseResearch = useCallback((techKey: string) => {
+    if (!gameState) return;
+    setGameState(chooseResearch(gameState, techKey));
+  }, [gameState]);
+
   // ─── Keyboard Shortcuts ────────────────────────────────
 
   useEffect(() => {
@@ -159,6 +164,35 @@ export default function App() {
       if (e.key === "r") handleBuildImprovement("road");
       if (e.key === "Escape") {
         setGameState({ ...gameState, selectedUnit: null, selectedTile: null });
+      }
+
+      // Numpad movement for selected unit (pointy-top hex directions)
+      // Also support arrow-key style with Home/End/PgUp/PgDn
+      const numpadDirs: Record<string, { dq: number; dr: number }> = {
+        "7":         { dq: 0,  dr: -1 },  // upper-left
+        "Home":      { dq: 0,  dr: -1 },
+        "9":         { dq: 1,  dr: -1 },  // upper-right
+        "PageUp":    { dq: 1,  dr: -1 },
+        "4":         { dq: -1, dr: 0 },   // left
+        "ArrowLeft": { dq: -1, dr: 0 },
+        "6":         { dq: 1,  dr: 0 },   // right
+        "ArrowRight":{ dq: 1,  dr: 0 },
+        "1":         { dq: -1, dr: 1 },   // lower-left
+        "End":       { dq: -1, dr: 1 },
+        "3":         { dq: 0,  dr: 1 },   // lower-right
+        "PageDown":  { dq: 0,  dr: 1 },
+      };
+
+      const dir = numpadDirs[e.key];
+      if (dir && gameState.selectedUnit) {
+        const unit = gameState.units.get(gameState.selectedUnit);
+        if (unit && unit.movesLeft > 0 && unit.owner === gameState.currentFaction) {
+          const toQ = unit.q + dir.dq;
+          const toR = unit.r + dir.dr;
+          const newState = moveUnit(gameState, gameState.selectedUnit, toQ, toR);
+          const key = hexKey(toQ, toR);
+          setGameState({ ...newState, selectedTile: key });
+        }
       }
     };
 
@@ -231,6 +265,7 @@ export default function App() {
         onBuildImprovement={handleBuildImprovement}
         onEndTurn={handleEndTurn}
         onChangeProduction={handleChangeProduction}
+        onChooseResearch={handleChooseResearch}
       />
     </div>
   );

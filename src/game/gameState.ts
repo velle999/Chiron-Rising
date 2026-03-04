@@ -7,6 +7,11 @@ import {
   generateMap, MapConfig, DEFAULT_MAP_CONFIG
 } from "./hexMap";
 
+import {
+  getTech, getResearchableTechs, getFactionStartingTechs,
+  calculateLabsPerTurn, TECH_TREE
+} from "./techTree";
+
 // ─── Resource Types ──────────────────────────────────────────
 
 export interface Resources {
@@ -25,27 +30,33 @@ export interface BuildItem {
   description: string;
   maintenance?: number;   // energy per turn (facilities)
   unitType?: UnitType;    // if unit
+  requiresTech?: string;  // tech key required to build
 }
 
 export const BUILD_CATALOG: BuildItem[] = [
   // ── Units ──
   { key: "unit_colony",    name: "Colony Pod",      category: "unit", cost: 30,  description: "Founds a new base",           unitType: UnitType.Colony },
-  { key: "unit_former",    name: "Terraformer",     category: "unit", cost: 18,  description: "Builds improvements on tiles", unitType: UnitType.Former },
+  { key: "unit_former",    name: "Terraformer",     category: "unit", cost: 18,  description: "Builds improvements on tiles", unitType: UnitType.Former, requiresTech: "centauri_ecology" },
   { key: "unit_scout",     name: "Scout Patrol",    category: "unit", cost: 8,   description: "Fast exploration unit",        unitType: UnitType.Scout },
   { key: "unit_infantry",  name: "Garrison",        category: "unit", cost: 12,  description: "Standard combat unit",         unitType: UnitType.Infantry },
-  { key: "unit_speeder",   name: "Speeder",         category: "unit", cost: 16,  description: "Fast attack vehicle",          unitType: UnitType.Speeder },
+  { key: "unit_speeder",   name: "Speeder",         category: "unit", cost: 16,  description: "Fast attack vehicle",          unitType: UnitType.Speeder, requiresTech: "doctrine_mobility" },
 
   // ── Facilities ──
-  { key: "recycling_tanks",    name: "Recycling Tanks",    category: "facility", cost: 40,  maintenance: 0, description: "+1 nutrient, mineral, energy at base square" },
-  { key: "recreation_commons", name: "Recreation Commons", category: "facility", cost: 40,  maintenance: 1, description: "Reduces drones by 2" },
-  { key: "network_node",       name: "Network Node",       category: "facility", cost: 80,  maintenance: 1, description: "+50% labs output at base" },
-  { key: "energy_bank",        name: "Energy Bank",        category: "facility", cost: 80,  maintenance: 1, description: "+50% economy at base" },
-  { key: "perimeter_defense",  name: "Perimeter Defense",  category: "facility", cost: 50,  maintenance: 0, description: "Doubles defense of units in base" },
-  { key: "command_center",     name: "Command Center",     category: "facility", cost: 40,  maintenance: 1, description: "+2 morale for land units built here" },
-  { key: "children_creche",    name: "Children's Creche",  category: "facility", cost: 50,  maintenance: 1, description: "+2 Growth, +2 Efficiency at this base" },
-  { key: "tree_farm",          name: "Tree Farm",          category: "facility", cost: 120, maintenance: 3, description: "+50% psych and economy from forests" },
-  { key: "hab_complex",        name: "Hab Complex",        category: "facility", cost: 80,  maintenance: 2, description: "Allows population to exceed 7" },
-  { key: "research_hospital",  name: "Research Hospital",  category: "facility", cost: 120, maintenance: 3, description: "+50% labs, -1 drone" },
+  { key: "recycling_tanks",    name: "Recycling Tanks",    category: "facility", cost: 40,  maintenance: 0, description: "+1 nutrient, mineral, energy at base square", requiresTech: "biogenetics" },
+  { key: "recreation_commons", name: "Recreation Commons", category: "facility", cost: 40,  maintenance: 1, description: "Reduces drones by 2",                        requiresTech: "social_psych" },
+  { key: "network_node",       name: "Network Node",       category: "facility", cost: 80,  maintenance: 1, description: "+50% labs output at base",                    requiresTech: "information_networks" },
+  { key: "energy_bank",        name: "Energy Bank",        category: "facility", cost: 80,  maintenance: 1, description: "+50% economy at base",                        requiresTech: "industrial_economics" },
+  { key: "perimeter_defense",  name: "Perimeter Defense",  category: "facility", cost: 50,  maintenance: 0, description: "Doubles defense of units in base",            requiresTech: "doctrine_loyalty" },
+  { key: "command_center",     name: "Command Center",     category: "facility", cost: 40,  maintenance: 1, description: "+2 morale for land units built here",         requiresTech: "doctrine_mobility" },
+  { key: "children_creche",    name: "Children's Creche",  category: "facility", cost: 50,  maintenance: 1, description: "+2 Growth, +2 Efficiency at this base",       requiresTech: "ethical_calculus" },
+  { key: "tree_farm",          name: "Tree Farm",          category: "facility", cost: 120, maintenance: 3, description: "+50% psych and economy from forests",         requiresTech: "environmental_economics" },
+  { key: "hab_complex",        name: "Hab Complex",        category: "facility", cost: 80,  maintenance: 2, description: "Allows population to exceed 7",               requiresTech: "industrial_automation" },
+  { key: "research_hospital",  name: "Research Hospital",  category: "facility", cost: 120, maintenance: 3, description: "+50% labs, -1 drone",                         requiresTech: "gene_splicing" },
+  { key: "biology_lab",        name: "Biology Lab",        category: "facility", cost: 60,  maintenance: 1, description: "+2 research per turn",                        requiresTech: "centauri_empathy" },
+  { key: "fusion_lab",         name: "Fusion Lab",         category: "facility", cost: 120, maintenance: 3, description: "+50% economy and labs",                       requiresTech: "fusion_power" },
+  { key: "genejack_factory",   name: "Genejack Factory",   category: "facility", cost: 100, maintenance: 2, description: "+50% minerals, +1 drone",                     requiresTech: "retroviral_engineering" },
+  { key: "aerospace_complex",  name: "Aerospace Complex",  category: "facility", cost: 80,  maintenance: 2, description: "+2 morale for air units",                     requiresTech: "doctrine_air_power" },
+  { key: "robotic_assembly",   name: "Robotic Assembly Plant", category: "facility", cost: 200, maintenance: 4, description: "+50% minerals",                           requiresTech: "industrial_nanorobotics" },
 
   // ── Stockpile ──
   { key: "stockpile_energy",   name: "Stockpile Energy",   category: "facility", cost: 0,   maintenance: 0, description: "Convert excess minerals to energy" },
@@ -55,13 +66,16 @@ export function getBuildItem(key: string): BuildItem | undefined {
   return BUILD_CATALOG.find(b => b.key === key);
 }
 
-// Items available for a base to build (exclude already-built facilities)
-export function getAvailableBuilds(base: Base): BuildItem[] {
+// Items available for a base to build (check tech + already-built)
+export function getAvailableBuilds(base: Base, discoveredTechs: string[]): BuildItem[] {
+  const techSet = new Set(discoveredTechs);
   return BUILD_CATALOG.filter(item => {
-    // Can always build units
-    if (item.category === "unit") return true;
+    // Check tech prerequisite
+    if (item.requiresTech && !techSet.has(item.requiresTech)) return false;
     // Stockpile always available
     if (item.key === "stockpile_energy") return true;
+    // Can always build units (if tech met)
+    if (item.category === "unit") return true;
     // Can't build a facility you already have
     if (item.category === "facility" && base.facilities.includes(item.key)) return false;
     return true;
@@ -320,10 +334,10 @@ export function initializeGame(
       leaderName: def.leaderName,
       color: def.color,
       isHuman: i === playerFactionIndex,
-      energy: 10,
+      energy: def.key === "MORGAN" ? 110 : 10,
       techProgress: 0,
       currentResearch: null,
-      discoveredTechs: [],
+      discoveredTechs: getFactionStartingTechs(def.key),
       relations: new Map(),
     });
 
@@ -359,6 +373,19 @@ export function initializeGame(
     if (pos) {
       const worm = createUnit(UnitType.Mindworm, pos.q, pos.r, -1); // -1 = neutral/planet
       units.set(worm.id, worm);
+    }
+  }
+
+  // Set initial research for AI factions
+  for (let i = 0; i < factions.length; i++) {
+    if (!factions[i].isHuman) {
+      const available = getResearchableTechs(factions[i].discoveredTechs);
+      if (available.length > 0) {
+        factions[i] = {
+          ...factions[i],
+          currentResearch: available[Math.floor(placeRng() * available.length)].key,
+        };
+      }
     }
   }
 
@@ -642,6 +669,28 @@ export function changeProduction(state: GameState, baseId: string, buildKey: str
   return { ...state, bases: newBases, log };
 }
 
+// ─── Research Management ─────────────────────────────────────
+
+export function chooseResearch(state: GameState, techKey: string): GameState {
+  const tech = getTech(techKey);
+  if (!tech) return state;
+
+  const faction = state.factions[state.currentFaction];
+  if (!faction) return state;
+
+  // Verify prerequisites met
+  const discovered = new Set(faction.discoveredTechs);
+  if (!tech.prerequisites.every(p => discovered.has(p))) return state;
+  if (discovered.has(techKey)) return state;
+
+  const newFactions = state.factions.map((f, i) =>
+    i === state.currentFaction ? { ...f, currentResearch: techKey } : f
+  );
+
+  const log = [...state.log, `Research begun: ${tech.name}`];
+  return { ...state, factions: newFactions, log };
+}
+
 // ─── Turn Processing ─────────────────────────────────────────
 
 export function endTurn(state: GameState): GameState {
@@ -763,6 +812,41 @@ export function endTurn(state: GameState): GameState {
       );
     }
   }
+
+  // ── Research Processing ──
+  newState.factions = newState.factions.map(faction => {
+    if (!faction.currentResearch) return faction;
+
+    const tech = getTech(faction.currentResearch);
+    if (!tech) return faction;
+
+    const labsPerTurn = calculateLabsPerTurn(newBases, faction.id);
+    const newProgress = faction.techProgress + labsPerTurn;
+
+    if (newProgress >= tech.cost) {
+      // Discovery!
+      const newDiscovered = [...faction.discoveredTechs, faction.currentResearch];
+      log.push(`${faction.name} discovers ${tech.name}!`);
+
+      // Auto-pick next research for AI factions
+      let nextResearch: string | null = null;
+      if (!faction.isHuman) {
+        const available = getResearchableTechs(newDiscovered);
+        if (available.length > 0) {
+          nextResearch = available[Math.floor(Math.random() * available.length)].key;
+        }
+      }
+
+      return {
+        ...faction,
+        discoveredTechs: newDiscovered,
+        techProgress: 0,
+        currentResearch: nextResearch,
+      };
+    }
+
+    return { ...faction, techProgress: newProgress };
+  });
 
   // Mindworm random movement
   for (const [id, unit] of newUnits) {
