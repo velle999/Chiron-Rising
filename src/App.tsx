@@ -8,7 +8,8 @@ import InfoPanel from "./components/InfoPanel";
 import { hexKey } from "./game/hexMap";
 import {
   GameState, initializeGame, moveUnit, foundBase, endTurn,
-  changeProduction, chooseResearch, UnitType, FACTION_DEFS
+  changeProduction, chooseResearch, changeSocialEngineering,
+  setUnitOrders, UnitType, FACTION_DEFS
 } from "./game/gameState";
 
 // ─── Base Name Generator ─────────────────────────────────────
@@ -144,6 +145,16 @@ export default function App() {
     setGameState(chooseResearch(gameState, techKey));
   }, [gameState]);
 
+  const handleChangeSE = useCallback((category: string, choiceKey: string) => {
+    if (!gameState) return;
+    setGameState(changeSocialEngineering(gameState, category as any, choiceKey));
+  }, [gameState]);
+
+  const handleSetOrders = useCallback((orders: string | null) => {
+    if (!gameState?.selectedUnit) return;
+    setGameState(setUnitOrders(gameState, gameState.selectedUnit, orders));
+  }, [gameState]);
+
   // ─── Keyboard Shortcuts ────────────────────────────────
 
   useEffect(() => {
@@ -162,6 +173,15 @@ export default function App() {
       if (e.key === "s") handleBuildImprovement("solar");
       if (e.key === "p") handleBuildImprovement("forest");
       if (e.key === "r") handleBuildImprovement("road");
+      if (e.key === "e" || e.key === "E") {
+        const el = document.getElementById("se-picker");
+        if (el) el.style.display = el.style.display === "none" ? "block" : "none";
+      }
+      // Unit order shortcuts
+      if (e.key === "a" || e.key === "A") handleSetOrders("auto");
+      if (e.key === "l" || e.key === "L") handleSetOrders("sentry");
+      if (e.key === "h" || e.key === "H") handleSetOrders("hold");
+      if (e.key === "z") handleSetOrders(null); // cancel orders / skip turn
       if (e.key === "Escape") {
         setGameState({ ...gameState, selectedUnit: null, selectedTile: null });
       }
@@ -198,7 +218,7 @@ export default function App() {
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [gameState, handleEndTurn, handleFoundBase, handleBuildImprovement]);
+  }, [gameState, handleEndTurn, handleFoundBase, handleBuildImprovement, handleSetOrders]);
 
   // ─── Setup Screen ──────────────────────────────────────
 
@@ -266,6 +286,8 @@ export default function App() {
         onEndTurn={handleEndTurn}
         onChangeProduction={handleChangeProduction}
         onChooseResearch={handleChooseResearch}
+        onChangeSE={handleChangeSE}
+        onSetOrders={handleSetOrders}
       />
     </div>
   );

@@ -4,6 +4,10 @@
 
 import { GameState, getTileResources, Unit, UnitType, Base, getBuildItem, getAvailableBuilds, BuildItem } from "../game/gameState";
 import { getTech, getResearchableTechs, calculateLabsPerTurn, Tech } from "../game/techTree";
+import {
+  SocialEngineering, calculateSocialFactors, getAvailableChoices,
+  getSocialChoice, ALL_FACTORS, getFactorEffect, SocialFactor
+} from "../game/socialEngineering";
 import { hexKey, MapTile, Terrain, Moisture } from "../game/hexMap";
 
 interface InfoPanelProps {
@@ -13,9 +17,11 @@ interface InfoPanelProps {
   onEndTurn: () => void;
   onChangeProduction: (baseId: string, buildKey: string) => void;
   onChooseResearch: (techKey: string) => void;
+  onChangeSE: (category: string, choiceKey: string) => void;
+  onSetOrders: (orders: string | null) => void;
 }
 
-export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, onEndTurn, onChangeProduction, onChooseResearch }: InfoPanelProps) {
+export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, onEndTurn, onChangeProduction, onChooseResearch, onChangeSE, onSetOrders }: InfoPanelProps) {
   const { selectedTile, selectedUnit, map, units, bases, factions, currentFaction, turn, year, log } = gameState;
   const playerFaction = factions[currentFaction];
 
@@ -287,8 +293,100 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
               Atk: {unit.attack} · Def: {unit.defense}
             </div>
           )}
+          {unit.orders && (
+            <div style={{ color: "#44cc66", fontSize: 11, marginTop: 2 }}>
+              Orders: {
+                { auto: "Automated", auto_former: "Auto-Terraform", auto_scout: "Auto-Explore",
+                  auto_patrol: "Auto-Patrol", sentry: "Sentry", hold: "Hold", fortify: "Fortify"
+                }[unit.orders] || unit.orders
+              }
+            </div>
+          )}
         </div>
       )}
+
+      {/* Social Engineering */}
+      {playerFaction && (() => {
+        const factors = calculateSocialFactors(playerFaction.key, playerFaction.socialEngineering);
+        const se = playerFaction.socialEngineering;
+        const categories: Array<{ key: keyof SocialEngineering; label: string }> = [
+          { key: "politics", label: "POL" },
+          { key: "economics", label: "ECON" },
+          { key: "values", label: "VAL" },
+          { key: "future", label: "FUT" },
+        ];
+
+        // Only show key non-zero factors
+        const activeFacts = ALL_FACTORS.filter(f => factors[f] !== 0);
+
+        return (
+          <div style={styles.section}>
+            <div style={styles.sectionTitle}>SOCIAL ENGINEERING</div>
+            {/* Current choices - compact */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 4 }}>
+              {categories.map(cat => {
+                const choice = getSocialChoice(se[cat.key]);
+                return (
+                  <span key={cat.key} style={{ fontSize: 10, color: "#88aacc" }}>
+                    <span style={{ color: "#556677" }}>{cat.label}:</span> {choice?.name || "—"}
+                  </span>
+                );
+              })}
+            </div>
+            {/* Active factors */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 8px", marginBottom: 4 }}>
+              {activeFacts.map(f => (
+                <span key={f} style={{
+                  fontSize: 10,
+                  color: factors[f] > 0 ? "#44cc66" : "#cc4444",
+                  fontFamily: "'Share Tech Mono', monospace",
+                }}>
+                  {f.slice(0, 4)}: {factors[f] > 0 ? "+" : ""}{factors[f]}
+                </span>
+              ))}
+              {activeFacts.length === 0 && (
+                <span style={{ fontSize: 10, color: "#556677" }}>No modifiers</span>
+              )}
+            </div>
+            {/* Toggle SE picker */}
+            <button
+              style={{ ...styles.actionBtn, fontSize: 10, padding: "2px 8px" }}
+              onClick={() => {
+                const el = document.getElementById("se-picker");
+                if (el) el.style.display = el.style.display === "none" ? "block" : "none";
+              }}
+            >
+              [E] Social Engineering
+            </button>
+            <div id="se-picker" style={{ display: "none", marginTop: 6 }}>
+              {categories.map(cat => {
+                const choices = getAvailableChoices(cat.key, playerFaction.discoveredTechs, playerFaction.key);
+                return (
+                  <div key={cat.key} style={{ marginBottom: 6 }}>
+                    <div style={{ color: "#667788", fontSize: 10, marginBottom: 2 }}>{cat.label}:</div>
+                    <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+                      {choices.map(c => (
+                        <button
+                          key={c.key}
+                          style={{
+                            ...styles.seChoiceBtn,
+                            borderColor: se[cat.key] === c.key ? "#3388dd" : "#1a2a44",
+                            color: se[cat.key] === c.key ? "#ccddee" : "#667788",
+                          }}
+                          title={c.description}
+                          onClick={() => onChangeSE(cat.key, c.key)}
+                        >
+                          {c.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Actions */}
       <div style={styles.section}>
@@ -317,6 +415,25 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
               <button style={styles.actionBtn} onClick={() => onBuildImprovement("road")}>
                 [R] Build Road
               </button>
+            </>
+          )}
+          {/* Automation orders for any player unit */}
+          {unit && unit.owner === currentFaction && (
+            <>
+              <button style={styles.actionBtn} onClick={() => onSetOrders("auto")}>
+                [A] Automate
+              </button>
+              <button style={styles.actionBtn} onClick={() => onSetOrders("sentry")}>
+                [L] Sentry
+              </button>
+              <button style={styles.actionBtn} onClick={() => onSetOrders("hold")}>
+                [H] Hold Position
+              </button>
+              {unit.orders && (
+                <button style={styles.actionBtn} onClick={() => onSetOrders(null)}>
+                  [Z] Cancel Orders
+                </button>
+              )}
             </>
           )}
           <button style={{ ...styles.actionBtn, ...styles.endTurnBtn }} onClick={onEndTurn}>
@@ -468,5 +585,14 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: "left" as const,
     transition: "all 0.15s",
     gap: 1,
+  },
+  seChoiceBtn: {
+    background: "#0a1020",
+    border: "1px solid #1a2a44",
+    padding: "2px 6px",
+    fontSize: 10,
+    cursor: "pointer",
+    fontFamily: "'Rajdhani', sans-serif",
+    transition: "all 0.15s",
   },
 };

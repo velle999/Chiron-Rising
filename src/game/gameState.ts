@@ -12,6 +12,13 @@ import {
   calculateLabsPerTurn, TECH_TREE
 } from "./techTree";
 
+import {
+  SocialEngineering, defaultSocialEngineering, calculateSocialFactors,
+  SocialFactors, FACTION_BONUSES
+} from "./socialEngineering";
+
+import { processAutomatedUnits } from "./unitAutomation";
+
 // ─── Resource Types ──────────────────────────────────────────
 
 export interface Resources {
@@ -140,6 +147,7 @@ export interface FactionState {
   currentResearch: string | null;
   discoveredTechs: string[];
   relations: Map<number, number>; // faction id -> disposition (-100 to 100)
+  socialEngineering: SocialEngineering;
 }
 
 // ─── Game State ──────────────────────────────────────────────
@@ -339,6 +347,7 @@ export function initializeGame(
       currentResearch: null,
       discoveredTechs: getFactionStartingTechs(def.key),
       relations: new Map(),
+      socialEngineering: defaultSocialEngineering(),
     });
 
     // Place starting units
@@ -691,6 +700,55 @@ export function chooseResearch(state: GameState, techKey: string): GameState {
   return { ...state, factions: newFactions, log };
 }
 
+// ─── Social Engineering Management ───────────────────────────
+
+export function changeSocialEngineering(
+  state: GameState,
+  category: keyof SocialEngineering,
+  choiceKey: string
+): GameState {
+  const faction = state.factions[state.currentFaction];
+  if (!faction) return state;
+
+  // Verify not an aversion
+  const bonuses = FACTION_BONUSES[faction.key];
+  if (bonuses && choiceKey === bonuses.aversion) return state;
+
+  const newSE = { ...faction.socialEngineering, [category]: choiceKey };
+  const newFactors = calculateSocialFactors(faction.key, newSE);
+
+  const newFactions = state.factions.map((f, i) =>
+    i === state.currentFaction ? { ...f, socialEngineering: newSE } : f
+  );
+
+  const log = [...state.log, `Social Engineering: ${category} changed to ${choiceKey}`];
+  return { ...state, factions: newFactions, log };
+}
+
+// ─── Unit Orders ─────────────────────────────────────────────
+
+export function setUnitOrders(state: GameState, unitId: string, orders: string | null): GameState {
+  const unit = state.units.get(unitId);
+  if (!unit) return state;
+
+  const newUnits = new Map(state.units);
+  newUnits.set(unitId, { ...unit, orders });
+
+  const orderNames: Record<string, string> = {
+    "auto": "Automated",
+    "auto_former": "Auto-Terraform",
+    "auto_scout": "Auto-Explore",
+    "auto_patrol": "Auto-Patrol",
+    "sentry": "Sentry",
+    "hold": "Hold Position",
+    "fortify": "Fortify",
+  };
+
+  const label = orders ? (orderNames[orders] || orders) : "Cancelled";
+  const log = [...state.log, `${unit.type}: ${label}`];
+  return { ...state, units: newUnits, log };
+}
+
 // ─── Turn Processing ─────────────────────────────────────────
 
 export function endTurn(state: GameState): GameState {
@@ -703,6 +761,20 @@ export function endTurn(state: GameState): GameState {
     newUnits.set(id, { ...unit, movesLeft: unit.maxMoves });
   }
 
+  // Process automated units
+  const autoState = { ...state, units: newUnits };
+  const autoResult = processAutomatedUnits(autoState);
+  // Merge automation results
+  for (const [id, unit] of autoResult.units) {
+    newUnits.set(id, unit);
+  }
+  const newMapTiles = new Map(state.map.tiles);
+  for (const [key, tile] of autoResult.tiles) {
+    newMapTiles.set(key, tile);
+  }
+  log.push(...autoResult.log);
+  newState = { ...newState, map: { ...state.map, tiles: newMapTiles } };
+
   // Process bases — production and growth
   const newBases = new Map<string, Base>();
   for (const [id, base] of state.bases) {
@@ -710,9 +782,15 @@ export function endTurn(state: GameState): GameState {
     let totalMinerals = 0;
     let totalEnergy = 0;
 
+    // Calculate social factors for this base's owner
+    const ownerFaction = state.factions[base.owner];
+    const factors = ownerFaction
+      ? calculateSocialFactors(ownerFaction.key, ownerFaction.socialEngineering)
+      : { economy: 0, efficiency: 0, support: 0, morale: 0, police: 0, growth: 0, planet: 0, probe: 0, industry: 0, research: 0 };
+
     // Sum resources from worked tiles
     for (const tileKey of base.workedTiles) {
-      const tile = state.map.tiles.get(tileKey);
+      const tile = newState.map.tiles.get(tileKey);
       if (tile) {
         const res = getTileResources(tile);
         totalNutrients += res.nutrients;
@@ -726,6 +804,16 @@ export function endTurn(state: GameState): GameState {
     totalMinerals += 1;
     totalEnergy += 1;
 
+    // Apply Economy factor: bonus energy per base
+    if (factors.economy >= 1) totalEnergy += 1;
+    if (factors.economy >= 4) totalEnergy += 2;
+    if (factors.economy <= -2) totalEnergy -= 1;
+    if (factors.economy <= -3) totalEnergy -= 2;
+
+    // Apply Industry factor: modify mineral costs (we track effective minerals)
+    // Positive industry = cheaper builds (more effective minerals)
+    const industryMultiplier = 1.0 + (factors.industry * 0.1); // +/-10% per level
+
     // Subtract consumption (2 nutrients per pop)
     const consumed = base.population * 2;
     const surplus = totalNutrients - consumed;
@@ -733,9 +821,18 @@ export function endTurn(state: GameState): GameState {
     let newPop = base.population;
     let newStoredNutrients = base.storedNutrients + surplus;
 
-    // Growth
-    const growthThreshold = (newPop + 1) * 10;
-    if (newStoredNutrients >= growthThreshold) {
+    // Growth — apply growth factor
+    const growthModifier = 1.0 + (factors.growth * 0.1); // +/-10% per level
+    const growthThreshold = Math.max(5, Math.floor((newPop + 1) * 10 / growthModifier));
+
+    if (factors.growth >= 6) {
+      // POPULATION BOOM: grow every turn if nutrients available
+      if (newStoredNutrients > 0) {
+        newPop++;
+        newStoredNutrients = Math.max(0, newStoredNutrients - 10);
+        log.push(`${base.name} grows to size ${newPop}! (Population Boom)`);
+      }
+    } else if (newStoredNutrients >= growthThreshold) {
       newPop++;
       newStoredNutrients -= growthThreshold;
       log.push(`${base.name} has grown to size ${newPop}!`);
@@ -746,7 +843,8 @@ export function endTurn(state: GameState): GameState {
     }
 
     // ── Production ──
-    let newBuildProgress = base.buildProgress + totalMinerals;
+    const effectiveMinerals = Math.max(0, Math.floor(totalMinerals * industryMultiplier));
+    let newBuildProgress = base.buildProgress + effectiveMinerals;
     let newCurrentBuild = base.currentBuild;
     let newFacilities = [...base.facilities];
     let newQueue = [...base.productionQueue];
@@ -820,7 +918,12 @@ export function endTurn(state: GameState): GameState {
     const tech = getTech(faction.currentResearch);
     if (!tech) return faction;
 
-    const labsPerTurn = calculateLabsPerTurn(newBases, faction.id);
+    let labsPerTurn = calculateLabsPerTurn(newBases, faction.id);
+
+    // Apply research social factor
+    const factors = calculateSocialFactors(faction.key, faction.socialEngineering);
+    labsPerTurn = Math.max(1, Math.floor(labsPerTurn * (1.0 + factors.research * 0.1)));
+
     const newProgress = faction.techProgress + labsPerTurn;
 
     if (newProgress >= tech.cost) {
