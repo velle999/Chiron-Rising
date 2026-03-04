@@ -692,11 +692,28 @@ export default function HexMap({ gameState, onTileClick, onTileRightClick }: Hex
   const handleContextMenu = (e: React.MouseEvent) => { e.preventDefault(); const p = getPos(e); const h = toHex(p.x, p.y); onTileRightClick(h.q, h.r); };
 
   const handleWheel = (e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      setZoom(prev => Math.max(0.3, Math.min(3.0, prev * (e.deltaY > 0 ? 0.9 : 1.1))));
-    } else {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      // Ctrl/Shift + scroll = pan
       setCamera(prev => ({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
+    } else {
+      // Plain scroll = zoom toward cursor
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const r = canvas.getBoundingClientRect();
+      const mx = e.clientX - r.left - r.width / 2;
+      const my = e.clientY - r.top - r.height / 2;
+
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      const newZoom = Math.max(0.3, Math.min(4.0, zoom * factor));
+      const scale = newZoom / zoom;
+
+      // Adjust camera so zoom centers on cursor position
+      setCamera(prev => ({
+        x: mx - scale * (mx - prev.x),
+        y: my - scale * (my - prev.y),
+      }));
+      setZoom(newZoom);
     }
   };
 

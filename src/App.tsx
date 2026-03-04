@@ -6,6 +6,7 @@ import { useState, useCallback, useEffect } from "react";
 import HexMap from "./components/HexMap";
 import InfoPanel from "./components/InfoPanel";
 import DiplomacyScreen from "./components/DiplomacyScreen";
+import { ProductionPrompt, ResearchPrompt, getTurnPrompts, TurnPrompt } from "./components/TurnPrompts";
 import { hexKey } from "./game/hexMap";
 import {
   GameState, initializeGame, moveUnit, foundBase, endTurn,
@@ -33,6 +34,8 @@ export default function App() {
   const [showSetup, setShowSetup] = useState(true);
   const [selectedFaction, setSelectedFaction] = useState(0);
   const [diplomacyTarget, setDiplomacyTarget] = useState<FactionState | null>(null);
+  const [turnPrompts, setTurnPrompts] = useState<TurnPrompt[]>([]);
+  const [currentPromptIndex, setCurrentPromptIndex] = useState(0);
 
   // ─── Game Setup ────────────────────────────────────────
 
@@ -48,6 +51,13 @@ export default function App() {
     });
     setGameState(state);
     setShowSetup(false);
+
+    // Check initial prompts (research needed at game start)
+    const prompts = getTurnPrompts(state);
+    if (prompts.length > 0) {
+      setTurnPrompts(prompts);
+      setCurrentPromptIndex(0);
+    }
   }, [selectedFaction]);
 
   // ─── Tile Click Handler ────────────────────────────────
@@ -139,7 +149,15 @@ export default function App() {
 
   const handleEndTurn = useCallback(() => {
     if (!gameState) return;
-    setGameState(endTurn(gameState));
+    const newState = endTurn(gameState);
+    setGameState(newState);
+
+    // Check for prompts after turn
+    const prompts = getTurnPrompts(newState);
+    if (prompts.length > 0) {
+      setTurnPrompts(prompts);
+      setCurrentPromptIndex(0);
+    }
   }, [gameState]);
 
   const handleChangeProduction = useCallback((baseId: string, buildKey: string) => {
@@ -167,6 +185,8 @@ export default function App() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!gameState) return;
+      // Block shortcuts when modals are open
+      if (turnPrompts.length > 0 || diplomacyTarget) return;
 
       if (e.key === "Enter") {
         e.preventDefault();
@@ -232,7 +252,7 @@ export default function App() {
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [gameState, handleEndTurn, handleFoundBase, handleBuildImprovement, handleSetOrders]);
+  }, [gameState, handleEndTurn, handleFoundBase, handleBuildImprovement, handleSetOrders, turnPrompts, diplomacyTarget]);
 
   // ─── Setup Screen ──────────────────────────────────────
 
@@ -315,6 +335,52 @@ export default function App() {
           onClose={() => setDiplomacyTarget(null)}
         />
       )}
+      {/* Turn Prompts */}
+      {turnPrompts.length > 0 && currentPromptIndex < turnPrompts.length && (() => {
+        const prompt = turnPrompts[currentPromptIndex];
+        const advancePrompt = () => {
+          if (currentPromptIndex + 1 < turnPrompts.length) {
+            setCurrentPromptIndex(currentPromptIndex + 1);
+          } else {
+            setTurnPrompts([]);
+            setCurrentPromptIndex(0);
+          }
+        };
+
+        if (prompt.type === "production" && prompt.baseId) {
+          return (
+            <ProductionPrompt
+              gameState={gameState}
+              baseId={prompt.baseId}
+              baseName={prompt.baseName || "Unknown Base"}
+              completedItem={prompt.completedItem}
+              onSelect={(baseId, buildKey) => {
+                setGameState(changeProduction(gameState, baseId, buildKey));
+                advancePrompt();
+              }}
+              onSkip={() => {
+                setGameState(changeProduction(gameState, prompt.baseId!, "stockpile_energy"));
+                advancePrompt();
+              }}
+            />
+          );
+        }
+
+        if (prompt.type === "research") {
+          return (
+            <ResearchPrompt
+              gameState={gameState}
+              onSelect={(techKey) => {
+                setGameState(chooseResearch(gameState, techKey));
+                advancePrompt();
+              }}
+              onSkip={advancePrompt}
+            />
+          );
+        }
+
+        return null;
+      })()}
     </div>
   );
 }
