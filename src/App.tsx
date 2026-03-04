@@ -5,11 +5,12 @@
 import { useState, useCallback, useEffect } from "react";
 import HexMap from "./components/HexMap";
 import InfoPanel from "./components/InfoPanel";
+import DiplomacyScreen from "./components/DiplomacyScreen";
 import { hexKey } from "./game/hexMap";
 import {
   GameState, initializeGame, moveUnit, foundBase, endTurn,
   changeProduction, chooseResearch, changeSocialEngineering,
-  setUnitOrders, UnitType, FACTION_DEFS
+  setUnitOrders, UnitType, FACTION_DEFS, FactionState
 } from "./game/gameState";
 
 // ─── Base Name Generator ─────────────────────────────────────
@@ -31,6 +32,7 @@ export default function App() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [showSetup, setShowSetup] = useState(true);
   const [selectedFaction, setSelectedFaction] = useState(0);
+  const [diplomacyTarget, setDiplomacyTarget] = useState<FactionState | null>(null);
 
   // ─── Game Setup ────────────────────────────────────────
 
@@ -187,6 +189,13 @@ export default function App() {
       if (e.key === "l" || e.key === "L") handleSetOrders("sentry");
       if (e.key === "h" || e.key === "H") handleSetOrders("hold");
       if (e.key === "z") handleSetOrders(null); // cancel orders / skip turn
+      if (e.key === "d" || e.key === "D") {
+        // Open diplomacy with first AI faction
+        if (gameState) {
+          const firstAI = gameState.factions.find(f => !f.isHuman && f.id !== gameState.currentFaction);
+          if (firstAI) setDiplomacyTarget(firstAI);
+        }
+      }
       if (e.key === "Escape") {
         setGameState({ ...gameState, selectedUnit: null, selectedTile: null });
       }
@@ -293,7 +302,19 @@ export default function App() {
         onChooseResearch={handleChooseResearch}
         onChangeSE={handleChangeSE}
         onSetOrders={handleSetOrders}
+        onContactFaction={(factionId: number) => {
+          const target = gameState.factions[factionId];
+          if (target && !target.isHuman) setDiplomacyTarget(target);
+        }}
       />
+      {/* Diplomacy Overlay */}
+      {diplomacyTarget && (
+        <DiplomacyScreen
+          gameState={gameState}
+          targetFaction={diplomacyTarget}
+          onClose={() => setDiplomacyTarget(null)}
+        />
+      )}
     </div>
   );
 }

@@ -19,6 +19,8 @@ import {
 
 import { processAutomatedUnits } from "./unitAutomation";
 
+import { processAITurn } from "./aiOpponent";
+
 // ─── Resource Types ──────────────────────────────────────────
 
 export interface Resources {
@@ -273,7 +275,7 @@ export function getTileVisibility(state: GameState, hexKey: string): TileVisibil
 let nextUnitId = 1;
 let nextBaseId = 1;
 
-function createUnit(type: UnitType, q: number, r: number, owner: number): Unit {
+export function createUnit(type: UnitType, q: number, r: number, owner: number): Unit {
   const stats: Record<UnitType, { moves: number; hp: number; atk: number; def: number }> = {
     [UnitType.Colony]:    { moves: 1, hp: 10, atk: 0, def: 1 },
     [UnitType.Former]:    { moves: 1, hp: 10, atk: 0, def: 1 },
@@ -1028,12 +1030,44 @@ export function endTurn(state: GameState): GameState {
     return { ...faction, techProgress: newProgress };
   });
 
+  // ── AI Faction Turns ──
+  for (let i = 0; i < newState.factions.length; i++) {
+    if (newState.factions[i].isHuman) continue;
+
+    // Build temp state for AI to read
+    const tempState = { ...newState, units: newUnits, bases: newBases };
+    const aiResult = processAITurn(tempState, i);
+
+    // Merge AI unit changes
+    for (const [id, unit] of aiResult.units) {
+      newUnits.set(id, unit);
+    }
+    // Remove consumed colony pods
+    for (const [id] of new Map(newUnits)) {
+      if (!aiResult.units.has(id) && newUnits.get(id)?.owner === i && newUnits.get(id)?.type === UnitType.Colony) {
+        newUnits.delete(id);
+      }
+    }
+    // Merge AI base changes
+    for (const [id, base] of aiResult.bases) {
+      newBases.set(id, base);
+    }
+    // Merge AI tile changes (base founding, ownership)
+    const updatedMapTiles = new Map(newState.map.tiles);
+    for (const [key, tile] of aiResult.tiles) {
+      updatedMapTiles.set(key, tile);
+    }
+    newState = { ...newState, map: { ...newState.map, tiles: updatedMapTiles } };
+    newState.factions = aiResult.factions;
+    log.push(...aiResult.log);
+  }
+
   // Mindworm random movement
   for (const [id, unit] of newUnits) {
     if (unit.owner === -1 && unit.type === UnitType.Mindworm) {
       const neighbors = hexNeighbors({ q: unit.q, r: unit.r });
       const valid = neighbors.filter(n => {
-        const t = state.map.tiles.get(hexKey(n.q, n.r));
+        const t = newState.map.tiles.get(hexKey(n.q, n.r));
         return t && t.terrain !== Terrain.Ocean && t.terrain !== Terrain.DeepOcean;
       });
       if (valid.length > 0 && Math.random() < 0.4) {

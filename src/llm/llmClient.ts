@@ -20,8 +20,9 @@ export interface ChatMessage {
 }
 
 export const DEFAULT_LLM_CONFIG: LLMConfig = {
-  provider: "llamacpp",
-  host: "http://127.0.0.1:8080",
+  provider: "llamacpp",      // Ollama uses same OpenAI-compatible API
+  host: "http://127.0.0.1:11434",  // Ollama default port
+  model: "llama3.2",         // Reasonable default, user can change
   temperature: 0.8,
   maxTokens: 512,
 };

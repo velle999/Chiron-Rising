@@ -19,9 +19,10 @@ interface InfoPanelProps {
   onChooseResearch: (techKey: string) => void;
   onChangeSE: (category: string, choiceKey: string) => void;
   onSetOrders: (orders: string | null) => void;
+  onContactFaction: (factionId: number) => void;
 }
 
-export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, onEndTurn, onChangeProduction, onChooseResearch, onChangeSE, onSetOrders }: InfoPanelProps) {
+export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, onEndTurn, onChangeProduction, onChooseResearch, onChangeSE, onSetOrders, onContactFaction }: InfoPanelProps) {
   const { selectedTile, selectedUnit, map, units, bases, factions, currentFaction, turn, year, log } = gameState;
   const playerFaction = factions[currentFaction];
 
@@ -389,6 +390,30 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
           </div>
         );
       })()}
+
+      {/* Diplomacy */}
+      <div style={styles.section}>
+        <div style={styles.sectionTitle}>DIPLOMACY</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {factions.filter(f => f.id !== currentFaction && !f.isHuman).map(f => (
+            <button
+              key={f.id}
+              style={{
+                ...styles.actionBtn,
+                borderLeft: `3px solid ${f.color}`,
+                fontSize: 11,
+                padding: "3px 8px",
+              }}
+              onClick={() => onContactFaction(f.id)}
+            >
+              {f.leaderName}
+              <span style={{ color: "#556677", marginLeft: 4, fontSize: 10 }}>
+                ({Array.from(bases.values()).filter(b => b.owner === f.id).length} bases)
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Actions */}
       <div style={styles.section}>
