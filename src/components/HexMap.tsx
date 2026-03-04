@@ -284,6 +284,11 @@ function drawTile(ctx: CanvasRenderingContext2D, center: { x: number; y: number 
     ctx.stroke();
   }
 
+  // ── Road (drawn under improvement) ──
+  if (tile.road) {
+    drawImprovement(ctx, center, "road", size);
+  }
+
   // ── Improvement ──
   if (tile.improvement) {
     drawImprovement(ctx, center, tile.improvement, size);

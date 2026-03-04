@@ -117,6 +117,7 @@ export interface MapTile {
   temperature: number;   // 0-255
   fungus: boolean;
   river: boolean;
+  road: boolean;         // road/mag tube (separate from improvement)
   bonus: boolean;        // resource bonus square
   improvement: string | null;
   owner: number | null;  // faction index
@@ -331,6 +332,7 @@ export function generateMap(config: MapConfig = DEFAULT_MAP_CONFIG): GameMap {
         temperature: Math.round(temp),
         fungus: isFungus,
         river: false,
+        road: false,
         bonus: isBonus,
         improvement: null,
         owner: null,

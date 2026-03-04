@@ -167,14 +167,16 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
           <div style={styles.tileInfo}>
             <div>{terrainNames[tile.terrain] || tile.terrain}</div>
             <div style={styles.dim}>
-              {tile.moisture !== Moisture.Moderate ? tile.moisture + " · " : ""}
-              Elev: {tile.elevation}
+              {tile.moisture} ·
+              Elev: {Math.min(4, Math.floor(tile.elevation / 64) + 1)}
               {tile.river ? " · River" : ""}
               {tile.fungus ? " · Fungus" : ""}
               {tile.bonus ? " · Bonus" : ""}
             </div>
-            {tile.improvement && (
-              <div style={styles.improvement}>⚙ {tile.improvement}</div>
+            {(tile.improvement || tile.road) && (
+              <div style={styles.improvement}>
+                ⚙ {[tile.improvement, tile.road ? "road" : null].filter(Boolean).join(" + ")}
+              </div>
             )}
           </div>
           {resources && (tile.terrain !== Terrain.DeepOcean && tile.terrain !== Terrain.Ocean) && (

@@ -45,23 +45,29 @@ function bestImprovement(tile: MapTile): string | null {
   if (tile.baseId) return null;       // base square
   if (tile.fungus) return null;       // can't build on fungus (for now)
   if (tile.terrain === Terrain.Ocean || tile.terrain === Terrain.DeepOcean || tile.terrain === Terrain.Shelf) return null;
+  if (tile.terrain === Terrain.Mountains) return null; // Can't build on mountains
 
-  // Rocky = mine
-  if (tile.terrain === Terrain.Mountains || tile.terrain === Terrain.Hills) return "mine";
+  const isRocky = tile.terrain === Terrain.Hills;
 
-  // Rainy/moist flat/rolling = farm
+  // Rocky/Hills = mine (best mineral yield)
+  if (isRocky) return "mine";
+
+  // Rainy/moist flat or rolling = farm (nutrients from rainfall)
   if (tile.moisture === Moisture.Rainy || tile.moisture === Moisture.Moderate) {
-    if (tile.terrain === Terrain.Flat || tile.terrain === Terrain.Rolling) return "farm";
+    return "farm";
   }
 
-  // Arid = forest (best general-purpose for low-resource tiles)
+  // Arid with high elevation = solar collector (energy from elevation)
+  if (tile.moisture === Moisture.Arid && tile.elevation > 128) return "solar";
+
+  // Arid low elevation = forest (1N/2M/0E is decent general purpose)
   if (tile.moisture === Moisture.Arid) return "forest";
 
-  // High elevation = solar collector
-  if (tile.elevation > 160) return "solar";
+  // Rolling with moderate moisture = mine for minerals
+  if (tile.terrain === Terrain.Rolling) return "mine";
 
-  // Default: road if nothing else
-  return "road";
+  // Default: farm
+  return "farm";
 }
 
 // Find the best tile to terraform near a base
@@ -236,16 +242,27 @@ export function processAutomatedUnits(state: GameState): AutomationResult {
       const currentKey = hexKey(unit.q, unit.r);
       const currentTile = newTiles.get(currentKey);
 
-      if (currentTile && !currentTile.improvement && !currentTile.baseId && !currentTile.fungus
+      if (currentTile && !currentTile.baseId && !currentTile.fungus
           && currentTile.terrain !== Terrain.Ocean && currentTile.terrain !== Terrain.DeepOcean
           && currentTile.terrain !== Terrain.Shelf && currentTile.terrain !== Terrain.Mountains) {
-        // Build here
-        const imp = bestImprovement(currentTile);
-        if (imp) {
-          newTiles.set(currentKey, { ...currentTile, improvement: imp });
+
+        // If tile has improvement but no road, build road
+        if (currentTile.improvement && !currentTile.road) {
+          newTiles.set(currentKey, { ...currentTile, road: true });
           newUnits.set(id, { ...unit, movesLeft: 0 });
-          log.push(`Auto-Former: ${imp} built at (${unit.q},${unit.r})`);
+          log.push(`Auto-Former: road built at (${unit.q},${unit.r})`);
           continue;
+        }
+
+        // If tile has no improvement, build one
+        if (!currentTile.improvement) {
+          const imp = bestImprovement(currentTile);
+          if (imp) {
+            newTiles.set(currentKey, { ...currentTile, improvement: imp });
+            newUnits.set(id, { ...unit, movesLeft: 0 });
+            log.push(`Auto-Former: ${imp} built at (${unit.q},${unit.r})`);
+            continue;
+          }
         }
       }
 
@@ -319,21 +336,35 @@ function moveToward(unit: Unit, targetQ: number, targetR: number, state: GameSta
 
   if (walkable.length === 0) return null;
 
-  // Pick the neighbor closest to target
-  walkable.sort((a, b) =>
-    hexDistance(a.q, a.r, targetQ, targetR) - hexDistance(b.q, b.r, targetQ, targetR)
-  );
+  // Pick the neighbor closest to target, preferring roads
+  walkable.sort((a, b) => {
+    const aTile = state.map.tiles.get(hexKey(a.q, a.r));
+    const bTile = state.map.tiles.get(hexKey(b.q, b.r));
+    const aDist = hexDistance(a.q, a.r, targetQ, targetR);
+    const bDist = hexDistance(b.q, b.r, targetQ, targetR);
+    // Prefer roads (lower effective cost)
+    const aRoad = aTile?.road ? -0.5 : 0;
+    const bRoad = bTile?.road ? -0.5 : 0;
+    return (aDist + aRoad) - (bDist + bRoad);
+  });
 
   const best = walkable[0];
 
-  // Movement cost
+  // Movement cost: road=0, flat/rolling=1, hills/mountains=2, fungus=3
   const tile = state.map.tiles.get(hexKey(best.q, best.r));
-  const moveCost = (tile && (tile.terrain === Terrain.Hills || tile.terrain === Terrain.Mountains)) ? 2 : 1;
+  let moveCost = 1;
+  if (tile?.road) {
+    moveCost = 0;
+  } else if (tile?.fungus) {
+    moveCost = 3;
+  } else if (tile && (tile.terrain === Terrain.Hills || tile.terrain === Terrain.Mountains)) {
+    moveCost = 2;
+  }
 
   return {
     ...unit,
     q: best.q,
     r: best.r,
-    movesLeft: Math.max(0, unit.movesLeft - moveCost),
+    movesLeft: Math.max(0, unit.movesLeft - Math.max(moveCost, 1)),
   };
 }

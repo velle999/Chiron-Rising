@@ -437,63 +437,119 @@ export function initializeGame(
 }
 
 // ─── Tile Resource Calculation ───────────────────────────────
+// Based on SMAC manual resource production tables:
+//   Nutrients from rainfall: Arid=0, Moist(Moderate)=1, Rainy=2
+//     BUT rocky terrain negates ALL nutrient production
+//   Minerals from rockiness: Flat=0, Rolling=1, Rocky(Hills/Mountains)=1
+//   Energy from elevation: requires solar collector, 1 per 1000m band (1-4)
+//   Ocean/Shelf: fixed 1 energy per shelf
 
 export function getTileResources(tile: MapTile): Resources {
   let nutrients = 0;
   let minerals = 0;
   let energy = 0;
 
-  switch (tile.terrain) {
-    case Terrain.Flat:
-      nutrients = tile.moisture === Moisture.Rainy ? 2 : 1;
-      minerals = 0;
-      energy = 1;
-      break;
-    case Terrain.Rolling:
-      nutrients = tile.moisture === Moisture.Rainy ? 2 : 1;
-      minerals = 1;
-      energy = 1;
-      break;
-    case Terrain.Hills:
-      nutrients = 0;
-      minerals = 2;
-      energy = 1;
-      break;
-    case Terrain.Mountains:
-      nutrients = 0;
-      minerals = 3;
-      energy = 0;
-      break;
-    case Terrain.Shelf:
-      nutrients = 1;
-      minerals = 0;
-      energy = 1;
-      break;
-    default:
-      break;
+  // ── Forest: fixed production (overrides everything) ──
+  if (tile.improvement === "forest") {
+    return { nutrients: 1, minerals: 2, energy: 0 };
   }
 
+  // ── Fungus: base 0/0/0, unlockable with tech (simplified: 1/0/0 baseline) ──
   if (tile.fungus) {
     nutrients = 1;
     minerals = 0;
     energy = 0;
+    // River still adds energy in fungus
+    if (tile.river) energy += 1;
+    if (tile.bonus) { nutrients += 1; minerals += 1; energy += 1; }
+    return { nutrients, minerals, energy };
   }
 
-  if (tile.river) energy += 1;
-  if (tile.bonus) {
-    nutrients += 1;
-    minerals += 1;
-    energy += 1;
+  // ── Ocean tiles ──
+  if (tile.terrain === Terrain.DeepOcean || tile.terrain === Terrain.Ocean) {
+    return { nutrients: 0, minerals: 0, energy: 0 };
   }
-
-  // Improvements
-  if (tile.improvement === "farm") nutrients += 1;
-  if (tile.improvement === "mine") minerals += 1;
-  if (tile.improvement === "solar") energy += 1;
-  if (tile.improvement === "forest") {
+  if (tile.terrain === Terrain.Shelf) {
     nutrients = 1;
-    minerals = 2;
+    minerals = 0;
     energy = 1;
+    if (tile.improvement === "farm") nutrients += 2;   // Kelp farm: +2
+    if (tile.improvement === "mine") minerals += 1;    // Mining platform
+    if (tile.improvement === "solar") energy += 2;     // Tidal harness: +2
+    if (tile.bonus) { nutrients += 1; minerals += 1; energy += 1; }
+    return { nutrients, minerals, energy };
+  }
+
+  // ── Land tiles: SMAC formula ──
+
+  // Nutrients from rainfall (moisture)
+  // Rocky terrain (Hills/Mountains) negates all nutrient production from rainfall
+  const isRocky = tile.terrain === Terrain.Hills || tile.terrain === Terrain.Mountains;
+  if (!isRocky) {
+    switch (tile.moisture) {
+      case Moisture.Arid:     nutrients = 0; break;
+      case Moisture.Moderate: nutrients = 1; break;  // "Moist" in SMAC
+      case Moisture.Rainy:    nutrients = 2; break;
+    }
+  } else {
+    nutrients = 0; // Rocky negates nutrients
+  }
+
+  // Minerals from rockiness
+  switch (tile.terrain) {
+    case Terrain.Flat:       minerals = 0; break;
+    case Terrain.Rolling:    minerals = 1; break;
+    case Terrain.Hills:      minerals = 1; break;  // "Rocky" in SMAC
+    case Terrain.Mountains:  minerals = 1; break;  // Also rocky
+  }
+
+  // Energy: base 0 on land. Elevation energy requires solar collector.
+  energy = 0;
+
+  // ── River: +1 energy ──
+  if (tile.river) energy += 1;
+
+  // ── Improvements ──
+  if (tile.improvement === "farm") {
+    nutrients += 1;
+    // Mine will not reduce nutrients to zero
+  }
+  if (tile.improvement === "mine") {
+    // +1 rolling, +2 rocky, but won't reduce nutrients below 0
+    if (tile.terrain === Terrain.Rolling) {
+      minerals += 1;
+    } else if (isRocky) {
+      minerals += 2;
+    } else {
+      minerals += 1; // flat: still +1
+    }
+    // Mine on land with nutrients: -1 nutrient (but not below 0)
+    if (nutrients > 0 && !isRocky) {
+      nutrients = Math.max(0, nutrients - 1);
+    }
+  }
+  if (tile.improvement === "solar") {
+    // Solar collector: energy from elevation
+    // Elevation 0-255 mapped to SMAC's 0-3000m+ range
+    // Level 1 (0-63): +1, Level 2 (64-127): +2, Level 3 (128-191): +3, Level 4 (192+): +4
+    const elevLevel = Math.min(4, Math.floor(tile.elevation / 64) + 1);
+    energy += elevLevel;
+  }
+  // Road + mine on rocky = +1 mineral
+  if (tile.road && tile.improvement === "mine" && isRocky) {
+    minerals += 1;
+  }
+
+  // ── Bonus resources ──
+  if (tile.bonus) {
+    nutrients += 2;
+    minerals += 2;
+    energy += 2;
+  }
+
+  // ── Monolith: 2/2/2 (override) ──
+  if (tile.improvement === "monolith") {
+    return { nutrients: 2, minerals: 2, energy: 2 };
   }
 
   return { nutrients, minerals, energy };
@@ -531,13 +587,34 @@ export function moveUnit(state: GameState, unitId: string, toQ: number, toR: num
     return resolveCombat(state, unitId, enemyAtTarget.id);
   }
 
+  // Move cost: roads = 1/3 move, flat/rolling = 1, hills = 2, fungus = 3
+  const sourceTile = state.map.tiles.get(hexKey(unit.q, unit.r));
+  let moveCost = 1;
+
+  if (targetTile.road) {
+    // Roads: 1/3 movement point (effectively free for most units)
+    moveCost = 0;
+  } else if (targetTile.fungus) {
+    moveCost = 3;
+  } else if (targetTile.terrain === Terrain.Hills || targetTile.terrain === Terrain.Mountains) {
+    moveCost = 2;
+  }
+  // Road-to-road movement is free
+  if (sourceTile?.road && targetTile.road) moveCost = 0;
+
+  // Minimum 1 move spent unless road, but always allow at least one step
+  const actualCost = Math.max(moveCost, targetTile.road ? 0 : 1);
+
+  // If unit has fewer moves than cost, they can still move (uses all remaining)
+  if (unit.movesLeft < actualCost && unit.movesLeft < 1) return state;
+
   // Move
   const newUnits = new Map(state.units);
   newUnits.set(unitId, {
     ...unit,
     q: toQ,
     r: toR,
-    movesLeft: unit.movesLeft - 1,
+    movesLeft: Math.max(0, unit.movesLeft - Math.max(actualCost, 1)),
   });
 
   let newState = { ...state, units: newUnits };
@@ -799,10 +876,10 @@ export function endTurn(state: GameState): GameState {
       }
     }
 
-    // Base square always produces 2/1/1
+    // Base square always produces 2/1/2 (per SMAC manual)
     totalNutrients += 2;
     totalMinerals += 1;
-    totalEnergy += 1;
+    totalEnergy += 2;
 
     // Apply Economy factor: bonus energy per base
     if (factors.economy >= 1) totalEnergy += 1;

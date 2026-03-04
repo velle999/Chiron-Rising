@@ -116,7 +116,12 @@ export default function App() {
     if (!tile) return;
 
     const newTiles = new Map(gameState.map.tiles);
-    newTiles.set(key, { ...tile, improvement: type });
+    if (type === "road") {
+      // Road is separate — can coexist with other improvements
+      newTiles.set(key, { ...tile, road: true });
+    } else {
+      newTiles.set(key, { ...tile, improvement: type });
+    }
 
     const newUnits = new Map(gameState.units);
     newUnits.set(unit.id, { ...unit, movesLeft: 0 });
