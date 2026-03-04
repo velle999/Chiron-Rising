@@ -1,26 +1,10 @@
 # CHIRON RISING
 
-A 4X strategy game inspired by Sid Meier's Alpha Centauri with LLM-powered diplomacy.
+A 4X strategy game inspired by Sid Meier's Alpha Centauri with LLM-powered diplomacy and original SMAC voice-overs.
 
 Built with Tauri + React + TypeScript.
 
-## Phase 1 — What's Working
-
-- **Hex map generation** with fractal noise terrain (ocean, shelf, flats, rolling, hills, mountains)
-- **Xenofungus** scattered across the landscape
-- **Rivers** flowing downhill from mountain sources
-- **Bonus resource squares** randomly placed
-- **7 SMAC factions** with faction-colored territory
-- **Units**: Colony Pods, Terraformers, Scout Patrols, neutral Mind Worms
-- **Base founding** from Colony Pods with named bases
-- **Terraforming**: farms, mines, solar collectors, forests, roads
-- **Resource system**: nutrients, minerals, energy per tile
-- **Base growth**: population increases/decreases based on food surplus
-- **Simple combat** against Mind Worms and enemy units
-- **Turn cycle** with resource accumulation and unit refresh
-- **Keyboard shortcuts**: B=found base, F=farm, M=mine, S=solar, P=plant forest, R=road, Enter=end turn, Esc=deselect
-
-## Quick Start (Browser Dev Mode)
+## Quick Start
 
 ```bash
 cd chiron-rising
@@ -30,15 +14,114 @@ npm run dev
 
 Open http://localhost:1420
 
-## Build as Desktop App (Tauri)
+### Desktop App (Tauri)
 
 Requires [Rust](https://rustup.rs/) and Tauri CLI.
 
 ```bash
-npm install
 npm run tauri dev        # Dev mode with hot reload
 npm run tauri build      # Production build
 ```
+
+## What's In the Game
+
+### Phase 1 — Core Engine ✅
+- Procedural hex map (48×32) with fractal noise terrain: ocean, shelf, flats, rolling, hills, mountains
+- Xenofungus, rivers flowing downhill, bonus resource squares, monoliths
+- 7 SMAC-inspired factions with unique colors and starting bonuses
+- Colony Pods, Terraformers, Scout Patrols, Infantry, Speeders, Probe Teams
+- Base founding, terraforming (farm, mine, solar, forest, road), resource model
+- Simple combat, neutral Mind Worms, turn cycle
+
+### Phase 2 — Fog of War & Visuals ✅
+- Full fog of war system (hidden → explored → visible)
+- Textured terrain rendering with elevation shading
+- Animated xenofungus, coastline effects, geometric unit icons
+- Faction-colored base markers and territory borders
+
+### Phase 3 — Production & Tech ✅
+- Production queues with 20+ buildable items (units, facilities, secret projects)
+- Tech tree with 50+ technologies across 4 research tracks (Explore/Discover/Build/Conquer)
+- Tech prerequisites, faction starting techs, research progress UI
+- Mineral costs, build times, tech-gated production
+
+### Phase 4 — Social Engineering & Resources ✅
+- 4 SE categories × 4 choices each (16 total), all tech-gated
+- 10 social factors: Economy, Efficiency, Support, Morale, Police, Growth, Planet, Probe, Industry, Research
+- Faction intrinsic bonuses, agendas, and aversions (e.g., Gaians can't go Free Market)
+- SMAC-accurate resource formulas: nutrients from rainfall, minerals from rockiness, energy from elevation
+- Roads as separate infrastructure (coexist with improvements)
+- Movement costs: roads free, flat 1, hills 2, fungus 3
+
+### Phase 5 — Unit Automation & AI Opponents ✅
+- Auto-Former (prioritizes improvements by terrain), Auto-Scout, Auto-Patrol, Sentry, Hold
+- AI faction decision-making: base founding, production choices, military AI, expansion
+- AI social engineering (factions pursue their agenda)
+- AI colony pods evaluate terrain quality and found bases at good locations
+- AI military units chase nearby enemies or patrol near bases
+
+### Phase 6 — LLM Diplomacy ✅
+- Full comm screen for talking to faction leaders via local LLM (Ollama)
+- Rich character bibles for all 7 leaders with ideology, personality, speaking style
+- Game context injection: year, military strength, base count, recent events
+- Quick diplomatic actions: treaties, demands, tech trade, threats, ceasefire
+- Conversation history with context window management
+- Supports Ollama, llama.cpp, OpenAI, and Anthropic backends
+
+### Phase 7 — Sound & Voice-Overs ✅
+- 60+ original SMAC sound effects mapped to game events
+- Tech discovery voice-over quotes (the iconic voiced quotes)
+- Facility completion voice-overs
+- Faction leader intro speeches on diplomacy open
+- Opening narration at game start
+- SMAC-style Operations Director prompts for idle production/research
+- Scroll wheel zoom (cursor-centered, 0.3x–4.0x)
+
+## Sound Effects & Voice-Overs
+
+If you own SMAC on Steam, copy the original assets:
+
+```powershell
+xcopy "C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Alpha Centauri\fx" public\fx\ /E
+xcopy "C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Alpha Centauri\voices" public\voices\ /E
+```
+
+Without these files the game runs silently — no errors. Toggle sound with 🔊 in the top bar.
+
+## LLM Diplomacy Setup
+
+Default: Ollama at localhost:11434. Start any model:
+
+```bash
+ollama run llama3.2
+```
+
+Then click a faction leader in the DIPLOMACY panel or press **D**.
+
+Also supports llama.cpp (port 8080), OpenAI API, and Anthropic API.
+
+## Controls
+
+| Key | Action |
+|-----|--------|
+| **Click** | Select/move unit, select tile |
+| **Right click** | Deselect |
+| **Scroll wheel** | Zoom in/out |
+| **Click + drag** | Pan map |
+| **Enter** | End turn |
+| **B** | Found base (Colony Pod) |
+| **F** | Build farm |
+| **M** | Build mine |
+| **S** | Build solar collector |
+| **P** | Plant forest |
+| **R** | Build road |
+| **A** | Automate unit |
+| **L** | Sentry mode |
+| **H** | Hold position |
+| **Z** | Cancel orders |
+| **E** | Social Engineering picker |
+| **D** | Open diplomacy |
+| **Esc** | Deselect / close |
 
 ## Project Structure
 
@@ -46,63 +129,43 @@ npm run tauri build      # Production build
 chiron-rising/
 ├── src/
 │   ├── game/
-│   │   ├── hexMap.ts        # Hex math, map gen, terrain
-│   │   └── gameState.ts     # Game state, units, bases, turns
+│   │   ├── hexMap.ts            # Hex math, procedural map generation
+│   │   ├── gameState.ts         # Core game state, units, bases, turns, resources
+│   │   ├── techTree.ts          # 50+ technologies, 4 research tracks
+│   │   ├── socialEngineering.ts # 16 SE choices, 10 social factors
+│   │   ├── unitAutomation.ts    # Auto-former, auto-scout, patrol AI
+│   │   └── aiOpponent.ts        # AI faction decision-making
 │   ├── llm/
-│   │   └── llmClient.ts     # LLM abstraction (llama.cpp/OpenAI/Anthropic)
+│   │   ├── llmClient.ts         # LLM abstraction (Ollama/OpenAI/Anthropic)
+│   │   └── factionPersonalities.ts # Character bibles for all 7 leaders
+│   ├── audio/
+│   │   ├── soundSystem.ts       # Web Audio API, 60+ SMAC sound mappings
+│   │   └── voiceSystem.ts       # Tech/facility/faction voice-overs
 │   ├── components/
-│   │   ├── HexMap.tsx        # Canvas hex map renderer
-│   │   └── InfoPanel.tsx     # Sidebar info/actions panel
-│   ├── App.tsx               # Main app + setup screen
-│   └── main.tsx              # Entry point
-├── src-tauri/                # Tauri (Rust) backend
+│   │   ├── HexMap.tsx           # Canvas hex map renderer with zoom
+│   │   ├── InfoPanel.tsx        # Sidebar: tile info, production, research, SE, diplomacy
+│   │   ├── DiplomacyScreen.tsx  # LLM-powered faction leader conversations
+│   │   └── TurnPrompts.tsx      # Operations Director / Research Director modals
+│   ├── App.tsx                  # Main app, setup screen, keyboard shortcuts
+│   └── main.tsx                 # Entry point
+├── src-tauri/                   # Tauri (Rust) desktop backend
 └── public/
+    ├── fx/                      # SMAC sound effects (user-provided)
+    └── voices/                  # SMAC voice-overs (user-provided)
 ```
 
-## LLM Integration (Coming in Phase 4)
+## Roadmap — What's Next
 
-The LLM client already supports three backends:
-- **llama.cpp** — local models via OpenAI-compatible API
-- **OpenAI** — GPT-4o, etc.
-- **Anthropic** — Claude
-
-Diplomacy system will let you have freeform conversations with AI faction leaders
-who make actual game decisions (treaties, trade, war) based on their personality
-and the current game state.
-
-## Controls
-
-- **Left click**: Select unit / move selected unit / select tile
-- **Right click**: Deselect
-- **Scroll/drag**: Pan map
-- **Enter**: End turn
-- **Escape**: Deselect
-
-## Sound Effects & Voice-Overs
-
-If you own SMAC on Steam, you can use the original sound effects and voice-overs:
-
-```bash
-# Copy both folders from your SMAC install:
-xcopy "C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Alpha Centauri\fx" public\fx\ /E
-xcopy "C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Alpha Centauri\voices" public\voices\ /E
-```
-
-**Sound effects** (~60 wav files): turn complete, production complete, combat, terraform, etc.
-**Voice-overs** (~90 mp3 files):
-- Tech discovery quotes (the iconic voiced quotes when you research a tech)
-- Facility completion quotes
-- Faction leader intro speeches (plays when opening diplomacy)
-- Opening narration (plays at game start)
-
-Without the files, the game runs silently — no errors. Toggle sound with the 🔊 button.
-
-## Roadmap
-
-- [ ] Phase 2: Fog of war, exploration, AI unit movement
-- [ ] Phase 3: Full tech tree, social engineering, facilities, production queues
-- [ ] Phase 4: LLM diplomacy — talk to faction leaders, negotiate treaties
-- [ ] Phase 5: Unit workshop, victory conditions, audio, polish
+- [ ] Proper combat system (terrain defense, morale bonuses, base defense, attack/defense ratings)
+- [ ] Unit designer (weapon + armor + chassis combinations)
+- [ ] Secret projects (wonders with global effects)
+- [ ] Drone riots / golden age / specialists
+- [ ] Naval units and ocean gameplay
+- [ ] Diplomacy actions with game effects (treaties, pacts, vendetta)
+- [ ] Victory conditions (Transcendence, Conquest, Diplomatic, Economic)
+- [ ] Save/load game state
+- [ ] Minimap
+- [ ] Multiplayer (stretch goal)
 
 ---
 
