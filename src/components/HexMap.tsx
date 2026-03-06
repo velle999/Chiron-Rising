@@ -22,6 +22,22 @@ const HEX_SIZE = 20;
 
 // ─── Deterministic hash for per-tile variation ────────────────
 
+// roundRect polyfill for canvas
+function drawRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number | number[]) {
+  const radii = typeof r === "number" ? [r, r, r, r] : [...r, r, r, r].slice(0, 4);
+  ctx.moveTo(x + radii[0], y);
+  ctx.lineTo(x + w - radii[1], y);
+  ctx.arcTo(x + w, y, x + w, y + radii[1], radii[1]);
+  ctx.lineTo(x + w, y + h - radii[2]);
+  ctx.arcTo(x + w, y + h, x + w - radii[2], y + h, radii[2]);
+  ctx.lineTo(x + radii[3], y + h);
+  ctx.arcTo(x, y + h, x, y + h - radii[3], radii[3]);
+  ctx.lineTo(x, y + radii[0]);
+  ctx.arcTo(x, y, x + radii[0], y, radii[0]);
+  ctx.closePath();
+}
+
+
 function tileHash(q: number, r: number, salt: number = 0): number {
   let h = ((q * 374761393 + r * 668265263 + salt) & 0xffffffff) >>> 0;
   h = (((h ^ (h >> 13)) * 1274126177) & 0xffffffff) >>> 0;
@@ -436,76 +452,178 @@ function drawImprovement(ctx: CanvasRenderingContext2D, c: { x: number; y: numbe
 // ─── Unit Icon Renderer ───────────────────────────────────────
 
 function drawUnitIcon(ctx: CanvasRenderingContext2D, x: number, y: number, type: UnitType, color: string, size: number) {
-  ctx.fillStyle = color;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1.2;
+  const s = size;
+  ctx.save();
+  ctx.translate(x, y);
 
   switch (type) {
-    case UnitType.Colony:
-      // Hex with center dot
+    case UnitType.Colony: {
+      // Dome/pod shape — curved top with base
+      ctx.fillStyle = color + "66";
       ctx.beginPath();
-      for (let i = 0; i < 6; i++) { const a = (Math.PI / 3) * i - Math.PI / 6; const px = x + Math.cos(a) * size * 0.7; const py = y + Math.sin(a) * size * 0.7; i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py); }
-      ctx.closePath(); ctx.stroke();
+      ctx.arc(0, -s * 0.05, s * 0.55, Math.PI, 0); // dome top
+      ctx.lineTo(s * 0.55, s * 0.3);
+      ctx.lineTo(-s * 0.55, s * 0.3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      // Window lights
+      ctx.fillStyle = color;
+      ctx.fillRect(-s * 0.2, s * 0.0, s * 0.12, s * 0.1);
+      ctx.fillRect(s * 0.08, s * 0.0, s * 0.12, s * 0.1);
+      // Base platform
       ctx.fillStyle = color + "44";
-      ctx.fill();
-      ctx.fillStyle = color;
-      ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(-s * 0.6, s * 0.3, s * 1.2, s * 0.12);
       break;
-    case UnitType.Former:
-      // Wrench/tool shape
-      ctx.beginPath(); ctx.moveTo(x - size * 0.5, y + size * 0.4); ctx.lineTo(x + size * 0.3, y - size * 0.5); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(x + size * 0.1, y - size * 0.5); ctx.lineTo(x + size * 0.5, y - size * 0.5); ctx.lineTo(x + size * 0.5, y - size * 0.1); ctx.stroke();
+    }
+    case UnitType.Former: {
+      // Bulldozer/terraformer — tracked vehicle with blade
+      ctx.fillStyle = color + "55";
+      // Body
+      ctx.fillRect(-s * 0.35, -s * 0.2, s * 0.7, s * 0.35);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-s * 0.35, -s * 0.2, s * 0.7, s * 0.35);
+      // Blade (front)
+      ctx.fillStyle = color + "88";
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.5, s * 0.15);
+      ctx.lineTo(-s * 0.5, -s * 0.3);
+      ctx.lineTo(-s * 0.35, -s * 0.2);
+      ctx.lineTo(-s * 0.35, s * 0.15);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // Tracks
       ctx.fillStyle = color + "33";
-      ctx.beginPath(); ctx.arc(x, y, size * 0.35, 0, Math.PI * 2); ctx.fill();
-      break;
-    case UnitType.Scout:
-      // Eye shape
-      ctx.beginPath(); ctx.ellipse(x, y, size * 0.6, size * 0.35, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillRect(-s * 0.4, s * 0.15, s * 0.8, s * 0.1);
+      // Cab window
       ctx.fillStyle = color;
-      ctx.beginPath(); ctx.arc(x, y, size * 0.18, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(s * 0.05, -s * 0.12, s * 0.2, s * 0.12);
       break;
-    case UnitType.Infantry:
-      // Shield shape (filled)
-      ctx.beginPath();
-      ctx.moveTo(x, y - size * 0.6);
-      ctx.lineTo(x + size * 0.5, y - size * 0.25);
-      ctx.lineTo(x + size * 0.45, y + size * 0.4);
-      ctx.lineTo(x, y + size * 0.65);
-      ctx.lineTo(x - size * 0.45, y + size * 0.4);
-      ctx.lineTo(x - size * 0.5, y - size * 0.25);
-      ctx.closePath();
+    }
+    case UnitType.Scout: {
+      // Binoculars/recon — light vehicle silhouette
       ctx.fillStyle = color + "55";
-      ctx.fill();
-      ctx.stroke();
-      break;
-    case UnitType.Speeder:
-      // Arrow/chevron (filled)
+      // Low-profile body
       ctx.beginPath();
-      ctx.moveTo(x + size * 0.6, y);
-      ctx.lineTo(x - size * 0.3, y - size * 0.4);
-      ctx.lineTo(x - size * 0.15, y);
-      ctx.lineTo(x - size * 0.3, y + size * 0.4);
+      ctx.moveTo(-s * 0.5, s * 0.15);
+      ctx.lineTo(-s * 0.35, -s * 0.15);
+      ctx.lineTo(s * 0.35, -s * 0.15);
+      ctx.lineTo(s * 0.5, s * 0.15);
       ctx.closePath();
-      ctx.fillStyle = color + "55";
       ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
       ctx.stroke();
+      // Antenna
+      ctx.beginPath();
+      ctx.moveTo(s * 0.1, -s * 0.15);
+      ctx.lineTo(s * 0.15, -s * 0.5);
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(s * 0.15, -s * 0.5, 1.5, 0, Math.PI * 2); ctx.fill();
+      // Scope
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.15, -s * 0.15);
+      ctx.lineTo(-s * 0.25, -s * 0.4);
+      ctx.stroke();
+      ctx.beginPath(); ctx.arc(-s * 0.25, -s * 0.4, s * 0.1, 0, Math.PI * 2); ctx.stroke();
       break;
-    case UnitType.Mindworm:
-      // Sinuous worm with glowing eye
+    }
+    case UnitType.Infantry: {
+      // Soldier silhouette — figure with weapon
+      ctx.fillStyle = color + "66";
+      // Torso
+      ctx.fillRect(-s * 0.15, -s * 0.15, s * 0.3, s * 0.35);
+      // Head
+      ctx.beginPath(); ctx.arc(0, -s * 0.28, s * 0.14, 0, Math.PI * 2); ctx.fill();
+      // Legs
       ctx.strokeStyle = color;
       ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(-s * 0.05, s * 0.2); ctx.lineTo(-s * 0.2, s * 0.5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(s * 0.05, s * 0.2); ctx.lineTo(s * 0.15, s * 0.5); ctx.stroke();
+      // Weapon (rifle)
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.3;
       ctx.beginPath();
-      ctx.moveTo(x - size * 0.6, y);
-      ctx.quadraticCurveTo(x - size * 0.3, y - size * 0.45, x, y);
-      ctx.quadraticCurveTo(x + size * 0.3, y + size * 0.45, x + size * 0.6, y);
+      ctx.moveTo(s * 0.15, -s * 0.1);
+      ctx.lineTo(s * 0.5, -s * 0.35);
       ctx.stroke();
-      // Glowing eye
-      ctx.fillStyle = "#ff4488";
-      ctx.beginPath(); ctx.arc(x + size * 0.6, y, 2, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#ff448844";
-      ctx.beginPath(); ctx.arc(x + size * 0.6, y, 4, 0, Math.PI * 2); ctx.fill();
+      // Helmet detail
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(0, -s * 0.32, s * 0.08, Math.PI, 0); ctx.fill();
       break;
+    }
+    case UnitType.Speeder: {
+      // Fast attack vehicle — angular rover
+      ctx.fillStyle = color + "55";
+      // Body — angular wedge shape
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.45, s * 0.15);
+      ctx.lineTo(-s * 0.3, -s * 0.15);
+      ctx.lineTo(s * 0.15, -s * 0.25);
+      ctx.lineTo(s * 0.55, -s * 0.05);
+      ctx.lineTo(s * 0.55, s * 0.15);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      // Turret
+      ctx.fillStyle = color + "77";
+      ctx.fillRect(-s * 0.15, -s * 0.3, s * 0.25, s * 0.15);
+      ctx.strokeRect(-s * 0.15, -s * 0.3, s * 0.25, s * 0.15);
+      // Gun barrel
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(s * 0.1, -s * 0.22);
+      ctx.lineTo(s * 0.5, -s * 0.22);
+      ctx.stroke();
+      // Wheels
+      ctx.fillStyle = color + "44";
+      ctx.beginPath(); ctx.arc(-s * 0.3, s * 0.2, s * 0.1, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(s * 0.3, s * 0.2, s * 0.1, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case UnitType.Mindworm: {
+      // Alien worm — segmented body with tendrils and glowing nodes
+      ctx.strokeStyle = "#cc2266";
+      ctx.lineWidth = 2;
+      // Segmented body
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.6, s * 0.05);
+      ctx.quadraticCurveTo(-s * 0.3, -s * 0.35, 0, 0);
+      ctx.quadraticCurveTo(s * 0.3, s * 0.35, s * 0.55, s * 0.05);
+      ctx.stroke();
+      // Segments
+      ctx.fillStyle = "#cc226644";
+      for (let i = 0; i < 4; i++) {
+        const t = (i + 1) / 5;
+        const sx = -s * 0.6 + t * s * 1.15;
+        const sy = Math.sin(t * Math.PI) * -s * 0.15 + s * 0.05;
+        ctx.beginPath(); ctx.arc(sx, sy, s * 0.1, 0, Math.PI * 2); ctx.fill();
+      }
+      // Head with glowing eye
+      ctx.fillStyle = "#ff2266";
+      ctx.beginPath(); ctx.arc(s * 0.55, s * 0.05, s * 0.12, 0, Math.PI * 2); ctx.fill();
+      // Eye glow
+      ctx.fillStyle = "#ff448833";
+      ctx.beginPath(); ctx.arc(s * 0.55, s * 0.05, s * 0.25, 0, Math.PI * 2); ctx.fill();
+      // Tendrils
+      ctx.strokeStyle = "#cc226688";
+      ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(-s * 0.6, s * 0.05); ctx.lineTo(-s * 0.7, -s * 0.2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-s * 0.6, s * 0.05); ctx.lineTo(-s * 0.75, s * 0.2); ctx.stroke();
+      break;
+    }
   }
+
+  ctx.restore();
 }
 
 // ─── Main Component ───────────────────────────────────────────
@@ -763,54 +881,105 @@ export default function HexMap({ gameState, onTileClick, onTileRightClick, onCam
       else if (unit.owner >= 0 && unit.owner < factions.length) color = factions[unit.owner].color;
 
       const hasBase = Array.from(bases.values()).some(b => b.q === unit.q && b.r === unit.r);
-      const oy = hasBase ? -HEX_SIZE * 0.6 : 0;
+      const oy = hasBase ? -HEX_SIZE * 0.65 : 0;
       const ux = c.x, uy = c.y + oy;
 
+      // Selection ring
       if (unit.id === selectedUnit) {
-        const pulse = Math.sin(time * 0.005) * 2;
-        ctx.strokeStyle = "#ffffffaa"; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(ux, uy, HEX_SIZE * 0.45 + pulse, 0, Math.PI * 2); ctx.stroke();
-        ctx.strokeStyle = "#ffffff22"; ctx.lineWidth = 1;
+        const pulse = Math.sin(time * 0.005) * 1.5;
+        ctx.strokeStyle = "#ffffffbb"; ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.arc(ux, uy, HEX_SIZE * 0.55 + pulse, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = "#ffffff22"; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(ux, uy, HEX_SIZE * 0.65 + pulse, 0, Math.PI * 2); ctx.stroke();
       }
 
-      ctx.fillStyle = "#080c14dd";
-      ctx.beginPath(); ctx.arc(ux, uy, HEX_SIZE * 0.4, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = color; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(ux, uy, HEX_SIZE * 0.4, 0, Math.PI * 2); ctx.stroke();
+      // Unit shield — SMAC-style rounded rectangle
+      const sw = HEX_SIZE * 0.8; // shield width
+      const sh = HEX_SIZE * 0.85; // shield height
+      const sr = 3; // corner radius
+      const sx = ux - sw / 2;
+      const sy = uy - sh / 2;
 
-      drawUnitIcon(ctx, ux, uy, unit.type, color, HEX_SIZE * 0.28);
+      // Shadow
+      ctx.fillStyle = "#00000066";
+      ctx.beginPath();
+      drawRoundRect(ctx, sx + 1, sy + 1, sw, sh, sr);
+      ctx.fill();
 
-      // Attack/Defense numbers (bottom corners of unit circle)
-      if (unit.attack > 0 || unit.defense > 0) {
-        ctx.font = `bold ${HEX_SIZE * 0.28}px Rajdhani, sans-serif`;
+      // Shield background
+      ctx.fillStyle = "#0a0e18ee";
+      ctx.beginPath();
+      drawRoundRect(ctx, sx, sy, sw, sh, sr);
+      ctx.fill();
+
+      // Faction color stripe (left edge)
+      ctx.fillStyle = color + "cc";
+      ctx.beginPath();
+      drawRoundRect(ctx, sx, sy, 3.5, sh, [sr, 0, 0, sr]);
+      ctx.fill();
+
+      // Shield border
+      ctx.strokeStyle = color + "88";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      drawRoundRect(ctx, sx, sy, sw, sh, sr);
+      ctx.stroke();
+
+      // Unit silhouette — draw larger for visibility
+      drawUnitIcon(ctx, ux + 1, uy - sh * 0.08, unit.type, color, HEX_SIZE * 0.35);
+
+      // ── Stats bar at bottom of shield ──
+      const barY = sy + sh - HEX_SIZE * 0.28;
+
+      // Attack number (left, red bg)
+      if (unit.attack > 0) {
+        ctx.fillStyle = "#88222266";
+        ctx.fillRect(sx + 1, barY, sw * 0.33, HEX_SIZE * 0.25);
+        ctx.fillStyle = "#ff8866";
+        ctx.font = `bold ${HEX_SIZE * 0.22}px Rajdhani, sans-serif`;
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        // Attack (left)
-        if (unit.attack > 0) {
-          ctx.fillStyle = "#cc444499";
-          ctx.beginPath(); ctx.arc(ux - HEX_SIZE * 0.32, uy + HEX_SIZE * 0.32, HEX_SIZE * 0.17, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = "#ffcccc";
-          ctx.fillText(String(unit.attack), ux - HEX_SIZE * 0.32, uy + HEX_SIZE * 0.33);
-        }
-        // Defense (right)
-        ctx.fillStyle = "#4444cc99";
-        ctx.beginPath(); ctx.arc(ux + HEX_SIZE * 0.32, uy + HEX_SIZE * 0.32, HEX_SIZE * 0.17, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = "#ccccff";
-        ctx.fillText(String(unit.defense), ux + HEX_SIZE * 0.32, uy + HEX_SIZE * 0.33);
+        ctx.fillText(String(unit.attack), sx + sw * 0.165, barY + HEX_SIZE * 0.13);
       }
 
-      // Health bar (wider, with background)
+      // Defense number (right, blue bg)
+      ctx.fillStyle = "#22228866";
+      ctx.fillRect(sx + sw * 0.67, barY, sw * 0.33 - 1, HEX_SIZE * 0.25);
+      ctx.fillStyle = "#8888ff";
+      ctx.font = `bold ${HEX_SIZE * 0.22}px Rajdhani, sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(String(unit.defense), sx + sw * 0.835, barY + HEX_SIZE * 0.13);
+
+      // Moves (center, green)
+      ctx.fillStyle = "#22664422";
+      ctx.fillRect(sx + sw * 0.33, barY, sw * 0.34, HEX_SIZE * 0.25);
+      ctx.fillStyle = unit.movesLeft > 0 ? "#66ff88" : "#445566";
+      ctx.fillText(String(unit.movesLeft), sx + sw * 0.5, barY + HEX_SIZE * 0.13);
+
+      // Health bar (top of shield)
       if (unit.health < unit.maxHealth) {
-        const bw = HEX_SIZE * 0.65, bh = 2.5, bx = ux - bw / 2, by = uy - HEX_SIZE * 0.48;
+        const bw = sw - 4, bh = 2, bx = sx + 2, by = sy + 2;
         const pct = unit.health / unit.maxHealth;
-        ctx.fillStyle = "#0a0a0acc"; ctx.fillRect(bx - 0.5, by - 0.5, bw + 1, bh + 1);
+        ctx.fillStyle = "#0a0a0acc"; ctx.fillRect(bx, by, bw, bh);
         ctx.fillStyle = pct > 0.5 ? "#22cc55" : pct > 0.25 ? "#ccaa22" : "#cc3333";
         ctx.fillRect(bx, by, bw * pct, bh);
       }
 
+      // Move indicator (green dot top-right when has moves)
       if (unit.owner === currentFaction && unit.movesLeft > 0) {
         ctx.fillStyle = "#22cc55";
-        ctx.beginPath(); ctx.arc(ux + HEX_SIZE * 0.32, uy - HEX_SIZE * 0.32, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(sx + sw - 2, sy + 2, 2.5, 0, Math.PI * 2); ctx.fill();
+      }
+
+      // Orders indicator (small icon top-left)
+      if (unit.orders) {
+        ctx.fillStyle = "#44cc6688";
+        ctx.font = `bold ${HEX_SIZE * 0.18}px Rajdhani, sans-serif`;
+        ctx.textAlign = "left"; ctx.textBaseline = "top";
+        const orderChar: Record<string, string> = {
+          auto: "A", auto_former: "T", auto_scout: "X", auto_patrol: "P",
+          sentry: "S", hold: "H", fortify: "F",
+        };
+        ctx.fillText(orderChar[unit.orders] || "·", sx + 5, sy + 1);
       }
     }
 
