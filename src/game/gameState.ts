@@ -361,8 +361,18 @@ export function initializeGame(
     return (placeSeed >>> 0) / 0xffffffff;
   };
 
-  // Create factions
-  const selectedDefs = FACTION_DEFS.slice(0, Math.min(numFactions, FACTION_DEFS.length));
+  // Create factions — always include the player's chosen faction
+  const selectedDefs: typeof FACTION_DEFS = [];
+  // Player faction goes first
+  selectedDefs.push(FACTION_DEFS[playerFactionIndex]);
+  // Fill remaining slots with other factions
+  for (let i = 0; i < FACTION_DEFS.length && selectedDefs.length < numFactions; i++) {
+    if (i !== playerFactionIndex) {
+      selectedDefs.push(FACTION_DEFS[i]);
+    }
+  }
+  // Player is always index 0 in the game
+  const actualPlayerIndex = 0;
 
   for (let i = 0; i < selectedDefs.length; i++) {
     const def = selectedDefs[i];
@@ -372,7 +382,7 @@ export function initializeGame(
       name: def.name,
       leaderName: def.leaderName,
       color: def.color,
-      isHuman: i === playerFactionIndex,
+      isHuman: i === actualPlayerIndex,
       energy: def.key === "MORGAN" ? 110 : 10,
       techProgress: 0,
       currentResearch: null,
@@ -445,7 +455,7 @@ export function initializeGame(
     selectedUnit: null,
     selectedBase: null,
     selectedTile: null,
-    currentFaction: playerFactionIndex,
+    currentFaction: actualPlayerIndex,
     phase: "playing",
     log: ["Year 2100. Planetfall. The Unity has been lost. You must survive."],
     explored,
@@ -462,7 +472,7 @@ export function initializeGame(
   }
 
   // Set current player's visibility
-  initialState.visible = calculateVisibility(initialState, playerFactionIndex);
+  initialState.visible = calculateVisibility(initialState, actualPlayerIndex);
   initialState.explored = explored;
 
   return initialState;
