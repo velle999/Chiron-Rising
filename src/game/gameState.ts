@@ -21,6 +21,7 @@ import { processAutomatedUnits } from "./unitAutomation";
 
 import { processAITurn } from "./aiOpponent";
 import { resolveCombatDetailed } from "./combat";
+import { getProjectBonuses, healUnits, checkVictoryConditions, getFreeFacilities } from "./projectsAndVictory";
 
 // ─── Resource Types ──────────────────────────────────────────
 
@@ -1040,6 +1041,19 @@ export function endTurn(state: GameState): GameState {
       }
     }
 
+    // Apply free facilities from projects
+    const freeFacs = getFreeFacilities(newState, base.owner);
+    for (const fac of freeFacs) {
+      if (!newFacilities.includes(fac)) {
+        newFacilities.push(fac);
+      }
+    }
+
+    // Apply project bonuses
+    const projBonus = getProjectBonuses(newState, base.owner, id);
+    totalEnergy += projBonus.energyBonus;
+    totalEnergy = Math.floor(totalEnergy * projBonus.economyMultiplier);
+
     newBases.set(id, {
       ...base,
       population: newPop,
@@ -1072,6 +1086,17 @@ export function endTurn(state: GameState): GameState {
     // Apply research social factor
     const factors = calculateSocialFactors(faction.key, faction.socialEngineering);
     labsPerTurn = Math.max(1, Math.floor(labsPerTurn * (1.0 + factors.research * 0.1)));
+
+    // Apply project labs bonuses (Supercollider, Theory of Everything, Network Backbone)
+    for (const [baseId, base] of newBases) {
+      if (base.owner !== faction.id) continue;
+      const projBonus = getProjectBonuses(newState, faction.id, baseId);
+      if (projBonus.labsMultiplier > 1.0) {
+        // Approximate: add bonus labs proportional to this base's contribution
+        const baseLabs = base.facilities.includes("network_node") ? 2 : 1;
+        labsPerTurn += Math.floor(baseLabs * (projBonus.labsMultiplier - 1.0));
+      }
+    }
 
     const newProgress = faction.techProgress + labsPerTurn;
 
@@ -1147,6 +1172,12 @@ export function endTurn(state: GameState): GameState {
     }
   }
 
+  // Unit healing
+  const healedUnits = healUnits({ ...newState, units: newUnits, bases: newBases });
+  for (const [id, unit] of healedUnits) {
+    newUnits.set(id, unit);
+  }
+
   let finalState = {
     ...newState,
     turn: state.turn + 1,
@@ -1160,6 +1191,12 @@ export function endTurn(state: GameState): GameState {
   const newVisible = calculateVisibility(finalState, state.currentFaction);
   const newExplored = updateExplored(finalState.explored, state.currentFaction, newVisible);
   finalState = { ...finalState, visible: newVisible, explored: newExplored };
+
+  // Check victory conditions
+  const victory = checkVictoryConditions(finalState);
+  if (victory.winner !== null && victory.message) {
+    finalState.log = [...finalState.log, `*** ${victory.message} ***`];
+  }
 
   return finalState;
 }

@@ -17,6 +17,7 @@ import {
 import { soundManager, playSoundsForLog } from "./audio/soundSystem";
 import { playTechVoice, playFacilityVoice, playFactionIntro, playOpeningNarration, TECH_VOICE_MAP } from "./audio/voiceSystem";
 import { saveGame, loadGame, autoSave, loadAutoSave, hasSave, hasAutoSave, exportSaveToFile, importSaveFromFile, getSaveInfo } from "./game/saveLoad";
+import { checkVictoryConditions } from "./game/projectsAndVictory";
 
 // ─── Base Name Generator ─────────────────────────────────────
 
@@ -44,6 +45,7 @@ export default function App() {
   const [mapCamera, setMapCamera] = useState({ x: 0, y: 0, zoom: 1 });
   const [mapViewSize, setMapViewSize] = useState({ w: 800, h: 600 });
   const [minimapCameraTarget, setMinimapCameraTarget] = useState<{x:number,y:number}|null>(null);
+  const [victoryMessage, setVictoryMessage] = useState<string | null>(null);
   const prevLogLength = useRef(0);
   const audioInitialized = useRef(false);
 
@@ -248,6 +250,12 @@ export default function App() {
     // Autosave every 5 turns
     if (newState.turn % 5 === 0) {
       autoSave(newState);
+    }
+
+    // Check for victory
+    const victory = checkVictoryConditions(newState);
+    if (victory.winner !== null && victory.message) {
+      setVictoryMessage(victory.message);
     }
   }, [gameState]);
 
@@ -529,6 +537,42 @@ export default function App() {
           }
         }}
       />
+      {/* Victory Screen */}
+      {victoryMessage && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)",
+          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000,
+          fontFamily: "'Rajdhani', sans-serif",
+        }}>
+          <div style={{
+            background: "linear-gradient(180deg, #0c1a2a 0%, #060a14 100%)",
+            border: "1px solid #2a4466", borderRadius: 6, padding: "40px 50px",
+            maxWidth: 500, textAlign: "center",
+            boxShadow: "0 0 80px rgba(30,80,140,0.3)",
+          }}>
+            <div style={{ fontFamily: "'Orbitron', sans-serif", fontSize: 18, color: "#ffcc44", letterSpacing: "0.15em", marginBottom: 16 }}>
+              VICTORY
+            </div>
+            <div style={{ fontSize: 15, color: "#b0c4d8", lineHeight: 1.6, marginBottom: 24 }}>
+              {victoryMessage}
+            </div>
+            <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+              <button
+                style={{ ...gameStyles.topBarBtn, padding: "8px 20px", fontSize: 13, pointerEvents: "auto" }}
+                onClick={() => setVictoryMessage(null)}
+              >
+                Continue Playing
+              </button>
+              <button
+                style={{ ...gameStyles.topBarBtn, padding: "8px 20px", fontSize: 13, pointerEvents: "auto", borderColor: "#ffcc44", color: "#ffcc44" }}
+                onClick={() => { setVictoryMessage(null); setShowSetup(true); setGameState(null); }}
+              >
+                New Game
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Diplomacy Overlay */}
       {diplomacyTarget && (
         <DiplomacyScreen

@@ -180,14 +180,26 @@ chiron-rising/
     └── voices/                  # SMAC voice-overs (user-provided)
 ```
 
+### Phase 10 — Project Effects, Victory, Healing ✅
+- Secret project effects now applied: resource bonuses, free facilities, combat modifiers, research multipliers
+- Command Nexus: +20% combat for all units, free Command Center at every base
+- Citizens' Defense Force: free Perimeter Defense at every base
+- Supercollider/Theory of Everything: +100% labs at host base
+- Longevity Vaccine: +50% economy at every base
+- Dream Twister: +50% psi attack
+- Nano Factory: full unit repair each turn
+- Network Backbone: +1 energy per base
+- Unit healing: 1 HP/turn in bases, 2 HP with Research Hospital, 1 HP when fortified in field
+- Victory conditions: Conquest (all bases), Transcendence (Voice of Planet + tech), Economic (50%+ energy + 1000+), Diplomatic (75%+ bases)
+- Defeat detection: eliminated if you lose all bases and colony pods
+- Victory screen with Continue Playing / New Game options
+
 ## Roadmap — What's Next
 
-- [ ] Secret project global effects (currently tracked but effects not all applied)
 - [ ] Unit designer (weapon + armor + chassis combinations)
 - [ ] Drone riots / golden age / specialists
 - [ ] Naval units and ocean gameplay
 - [ ] Diplomacy actions with game effects (treaties, pacts, vendetta)
-- [ ] Victory conditions (Transcendence, Conquest, Diplomatic, Economic)
 - [ ] Multiplayer (stretch goal)
 
 ---
