@@ -47,27 +47,32 @@ function brighten(hex: string, amount: number): string {
 // ─── Terrain Palette ──────────────────────────────────────────
 
 function getTerrainPalette(tile: MapTile) {
-  const v = (tileHash(tile.q, tile.r) - 0.5) * 12;
+  const v = (tileHash(tile.q, tile.r) - 0.5) * 10;
+  const v2 = (tileHash(tile.q, tile.r, 7) - 0.5) * 6;
   const b = (s: string) => brighten(s, v);
 
-  if (tile.terrain === Terrain.DeepOcean) return { base: b("#06101f"), hi: "#0a1830", lo: "#030810" };
-  if (tile.terrain === Terrain.Ocean) return { base: b("#0c1e3a"), hi: "#102848", lo: "#081428" };
-  if (tile.terrain === Terrain.Shelf) return { base: b("#163050"), hi: "#1e3c60", lo: "#102444" };
+  // Elevation tint — higher = slightly brighter
+  const elev = tile.elevation / 255;
+  const elvBright = Math.floor(elev * 8);
+
+  if (tile.terrain === Terrain.DeepOcean) return { base: b("#050d1a"), hi: "#0a1830", lo: "#020810", accent: "#0e2040" };
+  if (tile.terrain === Terrain.Ocean) return { base: b("#0b1a32"), hi: "#102848", lo: "#061020", accent: "#1a3858" };
+  if (tile.terrain === Terrain.Shelf) return { base: b("#142a48"), hi: "#1e3c60", lo: "#0e2038", accent: "#2a4a70" };
 
   if (tile.terrain === Terrain.Flat) {
-    if (tile.moisture === Moisture.Rainy) return { base: b("#1e4a18"), hi: "#2a5a22", lo: "#143810" };
-    if (tile.moisture === Moisture.Moderate) return { base: b("#3a6828"), hi: "#4a7a34", lo: "#2a5218" };
-    return { base: b("#6a7a32"), hi: "#7a8a3e", lo: "#5a6a26" };
+    if (tile.moisture === Moisture.Rainy) return { base: brighten("#1a4414", v + v2), hi: brighten("#285a20", elvBright), lo: "#0e3008", accent: "#2a6a22" };
+    if (tile.moisture === Moisture.Moderate) return { base: brighten("#345e22", v + v2), hi: brighten("#467030", elvBright), lo: "#264c18", accent: "#4a8030" };
+    return { base: brighten("#5a6a2a", v + v2), hi: brighten("#6a7a36", elvBright), lo: "#4a5a1e", accent: "#7a8a38" };
   }
   if (tile.terrain === Terrain.Rolling) {
-    if (tile.moisture === Moisture.Rainy) return { base: b("#2a5420"), hi: "#366630", lo: "#1e4218" };
-    if (tile.moisture === Moisture.Moderate) return { base: b("#4a7230"), hi: "#5a843c", lo: "#3a6024" };
-    return { base: b("#7a8a3a"), hi: "#8a9a46", lo: "#6a7a2e" };
+    if (tile.moisture === Moisture.Rainy) return { base: brighten("#244e1c", v + v2), hi: brighten("#306228", elvBright), lo: "#1a3c14", accent: "#387030" };
+    if (tile.moisture === Moisture.Moderate) return { base: brighten("#406828", v + v2), hi: brighten("#527a34", elvBright), lo: "#305620", accent: "#5a8a38" };
+    return { base: brighten("#6a7a32", v + v2), hi: brighten("#7a8a3e", elvBright), lo: "#5a6a26", accent: "#8a9a44" };
   }
-  if (tile.terrain === Terrain.Hills) return { base: b("#5a6048"), hi: "#6a7058", lo: "#4a503a" };
-  if (tile.terrain === Terrain.Mountains) return { base: b("#7a7a72"), hi: "#909088", lo: "#5a5a52" };
+  if (tile.terrain === Terrain.Hills) return { base: brighten("#4e5640", v), hi: brighten("#5e664e", elvBright), lo: "#3e4632", accent: "#6a7458" };
+  if (tile.terrain === Terrain.Mountains) return { base: brighten("#6a6a60", v), hi: brighten("#808078", elvBright), lo: "#4a4a42", accent: "#909088" };
 
-  return { base: "#333333", hi: "#444444", lo: "#222222" };
+  return { base: "#333333", hi: "#444444", lo: "#222222", accent: "#555555" };
 }
 
 // ─── Water check ──────────────────────────────────────────────
@@ -92,201 +97,261 @@ function drawTile(ctx: CanvasRenderingContext2D, center: { x: number; y: number 
   ctx.fillStyle = pal.base;
   ctx.fillRect(center.x - size, center.y - size, size * 2, size * 2);
 
-  // Elevation shading (light from top-left)
+  // Elevation shading (directional light from top-left)
   if (!isWater(tile.terrain)) {
     const grad = ctx.createLinearGradient(center.x - size, center.y - size, center.x + size, center.y + size);
-    grad.addColorStop(0, pal.hi + "44");
-    grad.addColorStop(0.5, "transparent");
-    grad.addColorStop(1, pal.lo + "55");
+    grad.addColorStop(0, pal.hi + "55");
+    grad.addColorStop(0.45, "transparent");
+    grad.addColorStop(1, pal.lo + "66");
     ctx.fillStyle = grad;
     ctx.fillRect(center.x - size, center.y - size, size * 2, size * 2);
   }
 
-  // ── Per-terrain details ──
   const h1 = tileHash(tile.q, tile.r, 1);
   const h2 = tileHash(tile.q, tile.r, 2);
   const h3 = tileHash(tile.q, tile.r, 3);
+  const h4 = tileHash(tile.q, tile.r, 4);
 
-  // Ocean waves
+  // ── Water: animated caustic shimmer ──
   if (tile.terrain === Terrain.DeepOcean || tile.terrain === Terrain.Ocean) {
-    ctx.strokeStyle = pal.hi + "20";
-    ctx.lineWidth = 0.5;
+    // Subtle moving caustic pattern
+    const t1 = time * 0.0005;
+    for (let i = 0; i < 4; i++) {
+      const cx = center.x + (tileHash(tile.q, tile.r, 10 + i) - 0.5) * size * 1.4;
+      const cy = center.y + (tileHash(tile.q, tile.r, 20 + i) - 0.5) * size * 1.4;
+      const phase = Math.sin(t1 + i * 2.1 + tile.q * 0.4) * 0.5 + 0.5;
+      const r = size * 0.2 + phase * size * 0.15;
+      ctx.fillStyle = pal.hi + (Math.floor(phase * 12 + 6)).toString(16).padStart(2, "0");
+      ctx.beginPath();
+      ctx.arc(cx + Math.sin(t1 + i) * 2, cy + Math.cos(t1 * 0.7 + i) * 2, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Wave lines
+    ctx.strokeStyle = pal.hi + "18";
+    ctx.lineWidth = 0.6;
     const wo = Math.sin(time * 0.001 + tile.q * 0.5) * 2;
     for (let i = 0; i < 3; i++) {
       const y = center.y - size * 0.4 + i * size * 0.4 + wo;
       ctx.beginPath();
-      ctx.moveTo(center.x - size * 0.6, y);
-      ctx.quadraticCurveTo(center.x, y + (h1 - 0.5) * 4, center.x + size * 0.6, y);
+      ctx.moveTo(center.x - size * 0.7, y);
+      ctx.quadraticCurveTo(center.x, y + (h1 - 0.5) * 5, center.x + size * 0.7, y);
       ctx.stroke();
     }
   }
 
-  // Shelf sand dots
+  // ── Shelf: sandy with scattered pebbles ──
   if (tile.terrain === Terrain.Shelf) {
-    ctx.fillStyle = pal.hi + "18";
-    for (let i = 0; i < 4; i++) {
+    ctx.fillStyle = pal.hi + "14";
+    for (let i = 0; i < 6; i++) {
       const dx = (tileHash(tile.q, tile.r, 10 + i) - 0.5) * size * 1.2;
       const dy = (tileHash(tile.q, tile.r, 20 + i) - 0.5) * size * 1.2;
       ctx.beginPath();
-      ctx.arc(center.x + dx, center.y + dy, tileHash(tile.q, tile.r, 30 + i) * 3 + 1, 0, Math.PI * 2);
+      ctx.arc(center.x + dx, center.y + dy, 1 + tileHash(tile.q, tile.r, 30 + i) * 2.5, 0, Math.PI * 2);
       ctx.fill();
     }
   }
 
-  // Grass/scrub
+  // ── Grass/scrub with texture dots ──
   if (tile.terrain === Terrain.Flat || tile.terrain === Terrain.Rolling) {
-    const dots = tile.moisture === Moisture.Rainy ? 8 : tile.moisture === Moisture.Moderate ? 5 : 3;
+    const dots = tile.moisture === Moisture.Rainy ? 10 : tile.moisture === Moisture.Moderate ? 6 : 3;
     for (let i = 0; i < dots; i++) {
       const dx = (tileHash(tile.q, tile.r, 40 + i) - 0.5) * size * 1.4;
       const dy = (tileHash(tile.q, tile.r, 50 + i) - 0.5) * size * 1.4;
-      ctx.fillStyle = (tile.moisture === Moisture.Rainy ? pal.hi : pal.lo) + "33";
+      const dotSize = 0.8 + tileHash(tile.q, tile.r, 60 + i) * 2;
+      ctx.fillStyle = (tile.moisture === Moisture.Rainy ? pal.accent : pal.lo) + "30";
       ctx.beginPath();
-      ctx.arc(center.x + dx, center.y + dy, 1 + tileHash(tile.q, tile.r, 60 + i) * 2, 0, Math.PI * 2);
+      ctx.arc(center.x + dx, center.y + dy, dotSize, 0, Math.PI * 2);
       ctx.fill();
     }
+    // Rolling: subtle contour ridges
     if (tile.terrain === Terrain.Rolling) {
-      ctx.strokeStyle = pal.lo + "30";
-      ctx.lineWidth = 0.8;
-      const ry = center.y + (h1 - 0.5) * size * 0.6;
-      ctx.beginPath();
-      ctx.moveTo(center.x - size * 0.5, ry);
-      ctx.quadraticCurveTo(center.x, ry - size * 0.2, center.x + size * 0.5, ry + size * 0.1);
-      ctx.stroke();
+      ctx.strokeStyle = pal.lo + "28";
+      ctx.lineWidth = 0.7;
+      for (let i = 0; i < 2; i++) {
+        const ry = center.y + (h1 - 0.5 + i * 0.5) * size * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(center.x - size * 0.6, ry);
+        ctx.quadraticCurveTo(center.x + (h2 - 0.5) * size * 0.4, ry - size * 0.15, center.x + size * 0.6, ry + (h3 - 0.5) * size * 0.2);
+        ctx.stroke();
+      }
     }
   }
 
-  // Hill contours
+  // ── Hills: layered contour shading ──
   if (tile.terrain === Terrain.Hills) {
-    ctx.strokeStyle = pal.hi + "28";
-    ctx.lineWidth = 0.7;
-    for (let i = 0; i < 2; i++) {
-      const oy = (i - 0.5) * size * 0.5;
+    // Multiple contour lines
+    for (let i = 0; i < 3; i++) {
+      const oy = (i - 1) * size * 0.35;
+      const ox = (tileHash(tile.q, tile.r, 70 + i) - 0.5) * size * 0.3;
+      ctx.strokeStyle = i === 1 ? pal.hi + "30" : pal.lo + "20";
+      ctx.lineWidth = 0.8;
       ctx.beginPath();
-      ctx.moveTo(center.x - size * 0.5, center.y + oy);
-      ctx.quadraticCurveTo(center.x, center.y + oy + (tileHash(tile.q, tile.r, 70 + i) - 0.5) * size * 0.3, center.x + size * 0.5, center.y + oy);
+      ctx.moveTo(center.x - size * 0.55 + ox, center.y + oy);
+      ctx.quadraticCurveTo(center.x + ox, center.y + oy - size * 0.15, center.x + size * 0.55 + ox, center.y + oy + (h1 - 0.5) * size * 0.15);
       ctx.stroke();
     }
-    ctx.fillStyle = pal.hi + "22";
-    for (let i = 0; i < 5; i++) {
+    // Rocky texture dots
+    for (let i = 0; i < 7; i++) {
       const dx = (tileHash(tile.q, tile.r, 80 + i) - 0.5) * size * 1.2;
       const dy = (tileHash(tile.q, tile.r, 90 + i) - 0.5) * size;
+      ctx.fillStyle = pal.accent + "22";
       ctx.fillRect(center.x + dx - 1, center.y + dy - 1, 2, 2);
     }
   }
 
-  // Mountain peaks
+  // ── Mountains: dramatic layered peaks with snow caps ──
   if (tile.terrain === Terrain.Mountains) {
-    const px = center.x + (h1 - 0.5) * size * 0.3;
-    const py = center.y - size * 0.35;
-    ctx.fillStyle = pal.hi + "40";
+    // Main peak
+    const px = center.x + (h1 - 0.5) * size * 0.25;
+    const py = center.y - size * 0.4;
+
+    // Shadow side
+    ctx.fillStyle = pal.lo + "55";
     ctx.beginPath();
     ctx.moveTo(px, py);
-    ctx.lineTo(px - size * 0.35, center.y + size * 0.2);
-    ctx.lineTo(px + size * 0.35, center.y + size * 0.2);
+    ctx.lineTo(px + size * 0.05, center.y + size * 0.25);
+    ctx.lineTo(px + size * 0.4, center.y + size * 0.25);
     ctx.closePath();
     ctx.fill();
 
-    if (tile.elevation > 200) {
-      ctx.fillStyle = "#ffffff30";
+    // Lit side
+    ctx.fillStyle = pal.hi + "44";
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(px - size * 0.4, center.y + size * 0.25);
+    ctx.lineTo(px + size * 0.05, center.y + size * 0.25);
+    ctx.closePath();
+    ctx.fill();
+
+    // Snow cap
+    if (tile.elevation > 160) {
+      const snowHeight = tile.elevation > 220 ? 0.35 : 0.22;
+      ctx.fillStyle = `rgba(220,230,240,${tile.elevation > 220 ? 0.45 : 0.3})`;
       ctx.beginPath();
       ctx.moveTo(px, py);
-      ctx.lineTo(px - size * 0.15, py + size * 0.2);
-      ctx.lineTo(px + size * 0.15, py + size * 0.2);
+      ctx.lineTo(px - size * snowHeight * 0.5, py + size * snowHeight);
+      ctx.lineTo(px + size * snowHeight * 0.5, py + size * snowHeight);
       ctx.closePath();
       ctx.fill();
     }
 
-    if (h2 > 0.4) {
-      ctx.fillStyle = pal.lo + "35";
+    // Secondary peak
+    if (h2 > 0.35) {
       const p2x = center.x + (h3 - 0.5) * size * 0.6;
+      const p2y = center.y - size * 0.2;
+      ctx.fillStyle = pal.lo + "38";
       ctx.beginPath();
-      ctx.moveTo(p2x, center.y - size * 0.15);
-      ctx.lineTo(p2x - size * 0.2, center.y + size * 0.25);
-      ctx.lineTo(p2x + size * 0.2, center.y + size * 0.25);
+      ctx.moveTo(p2x, p2y);
+      ctx.lineTo(p2x - size * 0.22, center.y + size * 0.3);
+      ctx.lineTo(p2x + size * 0.22, center.y + size * 0.3);
       ctx.closePath();
       ctx.fill();
     }
 
-    ctx.fillStyle = pal.lo + "25";
-    for (let i = 0; i < 6; i++) {
-      const dx = (tileHash(tile.q, tile.r, 100 + i) - 0.5) * size * 1.2;
-      const dy = (tileHash(tile.q, tile.r, 110 + i) - 0.5) * size * 0.8 + size * 0.15;
-      ctx.fillRect(center.x + dx - 0.5, center.y + dy - 0.5, 1.5, 1.5);
+    // Scree/rock texture
+    for (let i = 0; i < 5; i++) {
+      const dx = (tileHash(tile.q, tile.r, 100 + i) - 0.5) * size * 1.1;
+      const dy = (tileHash(tile.q, tile.r, 110 + i) - 0.5) * size * 0.6 + size * 0.2;
+      ctx.fillStyle = pal.accent + "18";
+      ctx.fillRect(center.x + dx - 1, center.y + dy - 0.5, 2, 1.5);
     }
   }
 
-  // ── Xenofungus (animated) ──
+  // ── Xenofungus (animated, glowing) ──
   if (tile.fungus) {
     const pulse = Math.sin(time * 0.002 + tile.q * 0.7 + tile.r * 0.5) * 0.15 + 0.85;
-    ctx.fillStyle = `rgba(139, 34, 82, ${0.45 * pulse})`;
+
+    // Ambient glow
+    const glowGrad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, size * 0.9);
+    glowGrad.addColorStop(0, `rgba(160, 30, 80, ${0.25 * pulse})`);
+    glowGrad.addColorStop(1, "transparent");
+    ctx.fillStyle = glowGrad;
     ctx.fillRect(center.x - size, center.y - size, size * 2, size * 2);
 
-    ctx.strokeStyle = `rgba(180, 40, 90, ${0.5 * pulse})`;
-    ctx.lineWidth = 1.2;
-    for (let i = 0; i < 5; i++) {
+    // Overlay
+    ctx.fillStyle = `rgba(120, 28, 65, ${0.35 * pulse})`;
+    ctx.fillRect(center.x - size, center.y - size, size * 2, size * 2);
+
+    // Tendrils
+    ctx.lineWidth = 1.0;
+    for (let i = 0; i < 6; i++) {
       const a = tileHash(tile.q, tile.r, 120 + i) * Math.PI * 2;
-      const len = size * 0.4 + tileHash(tile.q, tile.r, 130 + i) * size * 0.4;
+      const len = size * 0.35 + tileHash(tile.q, tile.r, 130 + i) * size * 0.4;
       const w = Math.sin(time * 0.003 + i * 1.5) * 3;
       const sx = center.x + Math.cos(a) * size * 0.1;
       const sy = center.y + Math.sin(a) * size * 0.1;
+      const ex = center.x + Math.cos(a) * len;
+      const ey = center.y + Math.sin(a) * len;
+      ctx.strokeStyle = `rgba(200, 45, 100, ${(0.4 + tileHash(tile.q, tile.r, 170 + i) * 0.2) * pulse})`;
       ctx.beginPath();
       ctx.moveTo(sx, sy);
-      ctx.quadraticCurveTo((sx + center.x + Math.cos(a) * len) / 2 + w, (sy + center.y + Math.sin(a) * len) / 2 + w, center.x + Math.cos(a) * len, center.y + Math.sin(a) * len);
+      ctx.quadraticCurveTo((sx + ex) / 2 + w, (sy + ey) / 2 + w, ex, ey);
       ctx.stroke();
     }
 
-    ctx.fillStyle = `rgba(200, 50, 100, ${0.6 * pulse})`;
-    for (let i = 0; i < 3; i++) {
-      const dx = (tileHash(tile.q, tile.r, 140 + i) - 0.5) * size;
-      const dy = (tileHash(tile.q, tile.r, 150 + i) - 0.5) * size;
-      ctx.beginPath();
-      ctx.arc(center.x + dx, center.y + dy, (1.5 + tileHash(tile.q, tile.r, 160 + i) * 2) * pulse, 0, Math.PI * 2);
-      ctx.fill();
+    // Glowing spore nodes
+    for (let i = 0; i < 4; i++) {
+      const dx = (tileHash(tile.q, tile.r, 140 + i) - 0.5) * size * 0.9;
+      const dy = (tileHash(tile.q, tile.r, 150 + i) - 0.5) * size * 0.9;
+      const nr = (1.2 + tileHash(tile.q, tile.r, 160 + i) * 2) * pulse;
+      // Glow
+      ctx.fillStyle = `rgba(255, 60, 130, ${0.15 * pulse})`;
+      ctx.beginPath(); ctx.arc(center.x + dx, center.y + dy, nr * 2, 0, Math.PI * 2); ctx.fill();
+      // Core
+      ctx.fillStyle = `rgba(220, 50, 110, ${0.7 * pulse})`;
+      ctx.beginPath(); ctx.arc(center.x + dx, center.y + dy, nr, 0, Math.PI * 2); ctx.fill();
     }
   }
 
-  // ── River ──
+  // ── River (wider, with glow) ──
   if (tile.river && !isWater(tile.terrain)) {
-    const rw = 1.5 + (tile.elevation < 150 ? 1 : 0);
+    const rw = 1.8 + (tile.elevation < 150 ? 1.2 : 0);
     const ra = tileHash(tile.q, tile.r, 200) * Math.PI;
     const wb = (tileHash(tile.q, tile.r, 201) - 0.5) * size * 0.4;
-    const rx1 = center.x + Math.cos(ra) * size * 0.7;
-    const ry1 = center.y + Math.sin(ra) * size * 0.7;
-    const rx2 = center.x - Math.cos(ra) * size * 0.7;
-    const ry2 = center.y - Math.sin(ra) * size * 0.7;
+    const rx1 = center.x + Math.cos(ra) * size * 0.75;
+    const ry1 = center.y + Math.sin(ra) * size * 0.75;
+    const rx2 = center.x - Math.cos(ra) * size * 0.75;
+    const ry2 = center.y - Math.sin(ra) * size * 0.75;
 
-    ctx.strokeStyle = "#44aaee22";
-    ctx.lineWidth = rw + 2;
+    // River glow
+    ctx.strokeStyle = "#3388cc18";
+    ctx.lineWidth = rw + 4;
     ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(rx1, ry1);
-    ctx.quadraticCurveTo(center.x + wb, center.y - wb, rx2, ry2);
-    ctx.stroke();
-
-    ctx.strokeStyle = "#2288ccaa";
+    ctx.beginPath(); ctx.moveTo(rx1, ry1); ctx.quadraticCurveTo(center.x + wb, center.y - wb, rx2, ry2); ctx.stroke();
+    // River bank
+    ctx.strokeStyle = "#44aaee28";
+    ctx.lineWidth = rw + 2;
+    ctx.beginPath(); ctx.moveTo(rx1, ry1); ctx.quadraticCurveTo(center.x + wb, center.y - wb, rx2, ry2); ctx.stroke();
+    // River water
+    ctx.strokeStyle = "#2288ccbb";
     ctx.lineWidth = rw;
-    ctx.beginPath();
-    ctx.moveTo(rx1, ry1);
-    ctx.quadraticCurveTo(center.x + wb, center.y - wb, rx2, ry2);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(rx1, ry1); ctx.quadraticCurveTo(center.x + wb, center.y - wb, rx2, ry2); ctx.stroke();
+    // Highlight
+    ctx.strokeStyle = "#66ccff30";
+    ctx.lineWidth = rw * 0.4;
+    ctx.beginPath(); ctx.moveTo(rx1, ry1); ctx.quadraticCurveTo(center.x + wb * 0.8, center.y - wb * 0.8 - 1, rx2, ry2); ctx.stroke();
   }
 
-  // ── Bonus resource ──
+  // ── Bonus resource (diamond with glow) ──
   if (tile.bonus) {
-    ctx.fillStyle = "#ffcc0055";
+    // Glow
+    ctx.fillStyle = "#ffcc0018";
+    ctx.beginPath(); ctx.arc(center.x, center.y, 6, 0, Math.PI * 2); ctx.fill();
+    // Diamond
+    ctx.fillStyle = "#ffcc0066";
     ctx.beginPath();
-    ctx.moveTo(center.x, center.y - 3);
-    ctx.lineTo(center.x + 2.5, center.y);
-    ctx.lineTo(center.x, center.y + 3);
-    ctx.lineTo(center.x - 2.5, center.y);
+    ctx.moveTo(center.x, center.y - 3.5);
+    ctx.lineTo(center.x + 3, center.y);
+    ctx.lineTo(center.x, center.y + 3.5);
+    ctx.lineTo(center.x - 3, center.y);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = "#ffcc0088";
-    ctx.lineWidth = 0.5;
+    ctx.strokeStyle = "#ffcc00aa";
+    ctx.lineWidth = 0.6;
     ctx.stroke();
   }
 
-  // ── Road (drawn under improvement) ──
+  // ── Road ──
   if (tile.road) {
     drawImprovement(ctx, center, "road", size);
   }
@@ -300,31 +365,70 @@ function drawTile(ctx: CanvasRenderingContext2D, center: { x: number; y: number 
 }
 
 function drawImprovement(ctx: CanvasRenderingContext2D, c: { x: number; y: number }, type: string, size: number) {
-  const s = size * 0.28;
+  const s = size * 0.3;
   ctx.save();
   ctx.translate(c.x, c.y);
 
   if (type === "farm") {
-    ctx.strokeStyle = "#44cc6688";
-    ctx.lineWidth = 0.8;
-    for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(-s, i * s * 0.6); ctx.lineTo(s, i * s * 0.6); ctx.stroke(); }
+    // Green field rows
+    ctx.strokeStyle = "#44cc6680";
+    ctx.lineWidth = 0.7;
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath(); ctx.moveTo(-s, i * s * 0.55); ctx.lineTo(s, i * s * 0.55); ctx.stroke();
+    }
+    // Cross lines
+    ctx.strokeStyle = "#44cc6640";
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath(); ctx.moveTo(i * s * 0.55, -s * 0.7); ctx.lineTo(i * s * 0.55, s * 0.7); ctx.stroke();
+    }
   } else if (type === "mine") {
-    ctx.strokeStyle = "#cc884488";
-    ctx.lineWidth = 1.2;
+    // Pickaxe shape
+    ctx.strokeStyle = "#cc884499";
+    ctx.lineWidth = 1.3;
     ctx.beginPath(); ctx.moveTo(-s * 0.6, -s * 0.6); ctx.lineTo(s * 0.6, s * 0.6); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(-s * 0.6, -s * 0.3); ctx.lineTo(-s * 0.3, -s * 0.6); ctx.stroke();
+    // Ore dots
+    ctx.fillStyle = "#cc884444";
+    ctx.beginPath(); ctx.arc(s * 0.3, -s * 0.3, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-s * 0.1, s * 0.3, 1, 0, Math.PI * 2); ctx.fill();
   } else if (type === "solar") {
+    // Solar panel with rays
     ctx.strokeStyle = "#ffcc4488";
     ctx.lineWidth = 0.8;
-    ctx.beginPath(); ctx.arc(0, 0, s * 0.35, 0, Math.PI * 2); ctx.stroke();
-    for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2 + Math.PI / 8; ctx.beginPath(); ctx.moveTo(Math.cos(a) * s * 0.5, Math.sin(a) * s * 0.5); ctx.lineTo(Math.cos(a) * s * 0.8, Math.sin(a) * s * 0.8); ctx.stroke(); }
+    ctx.beginPath(); ctx.arc(0, 0, s * 0.3, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = "#ffcc4422";
+    ctx.beginPath(); ctx.arc(0, 0, s * 0.3, 0, Math.PI * 2); ctx.fill();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * s * 0.45, Math.sin(a) * s * 0.45);
+      ctx.lineTo(Math.cos(a) * s * 0.8, Math.sin(a) * s * 0.8);
+      ctx.stroke();
+    }
   } else if (type === "forest") {
-    ctx.fillStyle = "#228833aa";
-    ctx.beginPath(); ctx.moveTo(0, -s * 0.8); ctx.lineTo(-s * 0.5, s * 0.4); ctx.lineTo(s * 0.5, s * 0.4); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = "#66442288"; ctx.fillRect(-s * 0.1, s * 0.4, s * 0.2, s * 0.3);
+    // Multiple layered trees
+    for (let t = 0; t < 3; t++) {
+      const tx = (t - 1) * s * 0.45;
+      const ty = (t === 1 ? -s * 0.15 : s * 0.1);
+      const ts = s * (t === 1 ? 0.85 : 0.65);
+      ctx.fillStyle = t === 1 ? "#1c7030bb" : "#1c703088";
+      ctx.beginPath();
+      ctx.moveTo(tx, ty - ts * 0.9);
+      ctx.lineTo(tx - ts * 0.5, ty + ts * 0.35);
+      ctx.lineTo(tx + ts * 0.5, ty + ts * 0.35);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // Trunks
+    ctx.fillStyle = "#55381888";
+    ctx.fillRect(-s * 0.06, s * 0.15, s * 0.12, s * 0.25);
   } else if (type === "road") {
-    ctx.strokeStyle = "#99888866"; ctx.lineWidth = 1.5; ctx.setLineDash([2, 2]);
-    ctx.beginPath(); ctx.moveTo(-s, 0); ctx.lineTo(s, 0); ctx.stroke(); ctx.setLineDash([]);
+    // Dashed road line
+    ctx.strokeStyle = "#aa997766";
+    ctx.lineWidth = 1.8;
+    ctx.setLineDash([2.5, 2]);
+    ctx.beginPath(); ctx.moveTo(-s * 1.1, 0); ctx.lineTo(s * 1.1, 0); ctx.stroke();
+    ctx.setLineDash([]);
   }
   ctx.restore();
 }
@@ -334,32 +438,72 @@ function drawImprovement(ctx: CanvasRenderingContext2D, c: { x: number; y: numbe
 function drawUnitIcon(ctx: CanvasRenderingContext2D, x: number, y: number, type: UnitType, color: string, size: number) {
   ctx.fillStyle = color;
   ctx.strokeStyle = color;
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 1.2;
 
   switch (type) {
     case UnitType.Colony:
+      // Hex with center dot
       ctx.beginPath();
       for (let i = 0; i < 6; i++) { const a = (Math.PI / 3) * i - Math.PI / 6; const px = x + Math.cos(a) * size * 0.7; const py = y + Math.sin(a) * size * 0.7; i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py); }
       ctx.closePath(); ctx.stroke();
-      ctx.beginPath(); ctx.arc(x, y, 1.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = color + "44";
+      ctx.fill();
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
       break;
     case UnitType.Former:
-      ctx.beginPath(); ctx.moveTo(x - size * 0.5, y + size * 0.5); ctx.lineTo(x + size * 0.5, y - size * 0.5); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(x + size * 0.2, y - size * 0.5); ctx.lineTo(x + size * 0.5, y - size * 0.5); ctx.lineTo(x + size * 0.5, y - size * 0.2); ctx.stroke();
+      // Wrench/tool shape
+      ctx.beginPath(); ctx.moveTo(x - size * 0.5, y + size * 0.4); ctx.lineTo(x + size * 0.3, y - size * 0.5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x + size * 0.1, y - size * 0.5); ctx.lineTo(x + size * 0.5, y - size * 0.5); ctx.lineTo(x + size * 0.5, y - size * 0.1); ctx.stroke();
+      ctx.fillStyle = color + "33";
+      ctx.beginPath(); ctx.arc(x, y, size * 0.35, 0, Math.PI * 2); ctx.fill();
       break;
     case UnitType.Scout:
+      // Eye shape
       ctx.beginPath(); ctx.ellipse(x, y, size * 0.6, size * 0.35, 0, 0, Math.PI * 2); ctx.stroke();
-      ctx.beginPath(); ctx.arc(x, y, size * 0.15, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(x, y, size * 0.18, 0, Math.PI * 2); ctx.fill();
       break;
     case UnitType.Infantry:
-      ctx.beginPath(); ctx.moveTo(x, y - size * 0.6); ctx.lineTo(x + size * 0.5, y - size * 0.2); ctx.lineTo(x + size * 0.4, y + size * 0.5); ctx.lineTo(x, y + size * 0.7); ctx.lineTo(x - size * 0.4, y + size * 0.5); ctx.lineTo(x - size * 0.5, y - size * 0.2); ctx.closePath(); ctx.stroke();
+      // Shield shape (filled)
+      ctx.beginPath();
+      ctx.moveTo(x, y - size * 0.6);
+      ctx.lineTo(x + size * 0.5, y - size * 0.25);
+      ctx.lineTo(x + size * 0.45, y + size * 0.4);
+      ctx.lineTo(x, y + size * 0.65);
+      ctx.lineTo(x - size * 0.45, y + size * 0.4);
+      ctx.lineTo(x - size * 0.5, y - size * 0.25);
+      ctx.closePath();
+      ctx.fillStyle = color + "55";
+      ctx.fill();
+      ctx.stroke();
       break;
     case UnitType.Speeder:
-      ctx.beginPath(); ctx.moveTo(x - size * 0.5, y - size * 0.3); ctx.lineTo(x + size * 0.5, y); ctx.lineTo(x - size * 0.5, y + size * 0.3); ctx.stroke();
+      // Arrow/chevron (filled)
+      ctx.beginPath();
+      ctx.moveTo(x + size * 0.6, y);
+      ctx.lineTo(x - size * 0.3, y - size * 0.4);
+      ctx.lineTo(x - size * 0.15, y);
+      ctx.lineTo(x - size * 0.3, y + size * 0.4);
+      ctx.closePath();
+      ctx.fillStyle = color + "55";
+      ctx.fill();
+      ctx.stroke();
       break;
     case UnitType.Mindworm:
-      ctx.beginPath(); ctx.moveTo(x - size * 0.6, y); ctx.quadraticCurveTo(x - size * 0.3, y - size * 0.4, x, y); ctx.quadraticCurveTo(x + size * 0.3, y + size * 0.4, x + size * 0.6, y); ctx.stroke();
-      ctx.beginPath(); ctx.arc(x + size * 0.6, y, 1.5, 0, Math.PI * 2); ctx.fill();
+      // Sinuous worm with glowing eye
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x - size * 0.6, y);
+      ctx.quadraticCurveTo(x - size * 0.3, y - size * 0.45, x, y);
+      ctx.quadraticCurveTo(x + size * 0.3, y + size * 0.45, x + size * 0.6, y);
+      ctx.stroke();
+      // Glowing eye
+      ctx.fillStyle = "#ff4488";
+      ctx.beginPath(); ctx.arc(x + size * 0.6, y, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#ff448844";
+      ctx.beginPath(); ctx.arc(x + size * 0.6, y, 4, 0, Math.PI * 2); ctx.fill();
       break;
   }
 }
@@ -563,31 +707,44 @@ export default function HexMap({ gameState, onTileClick, onTileRightClick, onCam
       const color = faction?.color || "#ffffff";
       const dimAlpha = vis === "explored" ? 0.4 : 1.0;
 
-      ctx.fillStyle = color + "11";
-      ctx.beginPath(); ctx.arc(c.x, c.y, HEX_SIZE * 0.75, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#0a0e18ee";
-      ctx.beginPath(); ctx.arc(c.x, c.y, HEX_SIZE * 0.55, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(c.x, c.y, HEX_SIZE * 0.55, 0, Math.PI * 2); ctx.stroke();
+      // Base glow
+      const baseGlow = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, HEX_SIZE);
+      baseGlow.addColorStop(0, color + "18");
+      baseGlow.addColorStop(1, "transparent");
+      ctx.fillStyle = baseGlow;
+      ctx.beginPath(); ctx.arc(c.x, c.y, HEX_SIZE, 0, Math.PI * 2); ctx.fill();
 
-      const popLines = Math.min(base.population, 6);
-      ctx.strokeStyle = color + "44";
-      ctx.lineWidth = 0.5;
-      for (let i = 0; i < popLines; i++) {
-        const a = (i / popLines) * Math.PI * 2;
-        ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(c.x + Math.cos(a) * HEX_SIZE * 0.4, c.y + Math.sin(a) * HEX_SIZE * 0.4); ctx.stroke();
+      // Building silhouettes (small rectangles around base)
+      const numBuildings = Math.min(base.facilities.length, 8);
+      ctx.fillStyle = color + "44";
+      for (let i = 0; i < numBuildings; i++) {
+        const a = (i / Math.max(numBuildings, 1)) * Math.PI * 2 - Math.PI / 2;
+        const bx = c.x + Math.cos(a) * HEX_SIZE * 0.6;
+        const by = c.y + Math.sin(a) * HEX_SIZE * 0.6;
+        const bw = 2 + (i % 3);
+        const bh = 3 + (i % 2) * 2;
+        ctx.fillRect(bx - bw / 2, by - bh, bw, bh);
       }
 
+      // Base circle
+      ctx.fillStyle = "#080c14ee";
+      ctx.beginPath(); ctx.arc(c.x, c.y, HEX_SIZE * 0.5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(c.x, c.y, HEX_SIZE * 0.5, 0, Math.PI * 2); ctx.stroke();
+
+      // Population number
       ctx.fillStyle = color;
       ctx.font = `bold ${HEX_SIZE * 0.5}px Rajdhani, sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(String(base.population), c.x, c.y + 1);
 
-      ctx.fillStyle = "#000000aa";
-      ctx.font = `500 ${HEX_SIZE * 0.38}px Rajdhani, sans-serif`;
-      ctx.fillText(base.name, c.x + 0.5, c.y + HEX_SIZE * 0.9 + 0.5);
-      ctx.fillStyle = color + "bb";
+      // Base name label with background
+      const nameWidth = ctx.measureText(base.name).width;
+      ctx.fillStyle = "#080c14cc";
+      ctx.fillRect(c.x - nameWidth / 2 - 3, c.y + HEX_SIZE * 0.7, nameWidth + 6, HEX_SIZE * 0.42);
+      ctx.fillStyle = color + "cc";
+      ctx.font = `500 ${HEX_SIZE * 0.36}px Rajdhani, sans-serif`;
       ctx.fillText(base.name, c.x, c.y + HEX_SIZE * 0.9);
     }
 
@@ -618,16 +775,35 @@ export default function HexMap({ gameState, onTileClick, onTileRightClick, onCam
       }
 
       ctx.fillStyle = "#080c14dd";
-      ctx.beginPath(); ctx.arc(ux, uy, HEX_SIZE * 0.38, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ux, uy, HEX_SIZE * 0.4, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = color; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(ux, uy, HEX_SIZE * 0.38, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(ux, uy, HEX_SIZE * 0.4, 0, Math.PI * 2); ctx.stroke();
 
-      drawUnitIcon(ctx, ux, uy, unit.type, color, HEX_SIZE * 0.25);
+      drawUnitIcon(ctx, ux, uy, unit.type, color, HEX_SIZE * 0.28);
 
+      // Attack/Defense numbers (bottom corners of unit circle)
+      if (unit.attack > 0 || unit.defense > 0) {
+        ctx.font = `bold ${HEX_SIZE * 0.28}px Rajdhani, sans-serif`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        // Attack (left)
+        if (unit.attack > 0) {
+          ctx.fillStyle = "#cc444499";
+          ctx.beginPath(); ctx.arc(ux - HEX_SIZE * 0.32, uy + HEX_SIZE * 0.32, HEX_SIZE * 0.17, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "#ffcccc";
+          ctx.fillText(String(unit.attack), ux - HEX_SIZE * 0.32, uy + HEX_SIZE * 0.33);
+        }
+        // Defense (right)
+        ctx.fillStyle = "#4444cc99";
+        ctx.beginPath(); ctx.arc(ux + HEX_SIZE * 0.32, uy + HEX_SIZE * 0.32, HEX_SIZE * 0.17, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#ccccff";
+        ctx.fillText(String(unit.defense), ux + HEX_SIZE * 0.32, uy + HEX_SIZE * 0.33);
+      }
+
+      // Health bar (wider, with background)
       if (unit.health < unit.maxHealth) {
-        const bw = HEX_SIZE * 0.55, bh = 2, bx = ux - bw / 2, by = uy + HEX_SIZE * 0.45;
+        const bw = HEX_SIZE * 0.65, bh = 2.5, bx = ux - bw / 2, by = uy - HEX_SIZE * 0.48;
         const pct = unit.health / unit.maxHealth;
-        ctx.fillStyle = "#1a1a1a"; ctx.fillRect(bx, by, bw, bh);
+        ctx.fillStyle = "#0a0a0acc"; ctx.fillRect(bx - 0.5, by - 0.5, bw + 1, bh + 1);
         ctx.fillStyle = pct > 0.5 ? "#22cc55" : pct > 0.25 ? "#ccaa22" : "#cc3333";
         ctx.fillRect(bx, by, bw * pct, bh);
       }

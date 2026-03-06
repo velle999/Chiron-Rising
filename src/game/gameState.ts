@@ -177,6 +177,7 @@ export interface FactionState {
   discoveredTechs: string[];
   relations: Map<number, number>; // faction id -> disposition (-100 to 100)
   socialEngineering: SocialEngineering;
+  knownFactions: Set<number>;   // faction IDs we've made contact with
 }
 
 // ─── Game State ──────────────────────────────────────────────
@@ -389,6 +390,7 @@ export function initializeGame(
       discoveredTechs: getFactionStartingTechs(def.key),
       relations: new Map(),
       socialEngineering: defaultSocialEngineering(),
+      knownFactions: new Set<number>(),
     });
 
     // Place starting units
@@ -666,6 +668,45 @@ export function moveUnit(state: GameState, unitId: string, toQ: number, toR: num
     const newVisible = calculateVisibility(newState, state.currentFaction);
     const newExplored = updateExplored(state.explored, state.currentFaction, newVisible);
     newState = { ...newState, visible: newVisible, explored: newExplored };
+
+    // Check for new faction contacts on newly visible tiles
+    const playerFaction = newState.factions[state.currentFaction];
+    const playerKnown = new Set(playerFaction.knownFactions || []);
+    let madeContact = false;
+    const updatedFactions = [...newState.factions];
+
+    for (const [, otherUnit] of newState.units) {
+      if (otherUnit.owner === state.currentFaction || otherUnit.owner < 0) continue;
+      if (playerKnown.has(otherUnit.owner)) continue;
+      const uKey = hexKey(otherUnit.q, otherUnit.r);
+      if (newVisible.has(uKey)) {
+        playerKnown.add(otherUnit.owner);
+        // Mutual contact
+        const otherKnown = new Set(updatedFactions[otherUnit.owner].knownFactions || []);
+        otherKnown.add(state.currentFaction);
+        updatedFactions[otherUnit.owner] = { ...updatedFactions[otherUnit.owner], knownFactions: otherKnown };
+        newState.log = [...(newState.log || state.log), `Contact established with ${updatedFactions[otherUnit.owner].name}!`];
+        madeContact = true;
+      }
+    }
+    for (const [, otherBase] of newState.bases) {
+      if (otherBase.owner === state.currentFaction) continue;
+      if (playerKnown.has(otherBase.owner)) continue;
+      const bKey = hexKey(otherBase.q, otherBase.r);
+      if (newVisible.has(bKey)) {
+        playerKnown.add(otherBase.owner);
+        const otherKnown = new Set(updatedFactions[otherBase.owner].knownFactions || []);
+        otherKnown.add(state.currentFaction);
+        updatedFactions[otherBase.owner] = { ...updatedFactions[otherBase.owner], knownFactions: otherKnown };
+        newState.log = [...(newState.log || state.log), `Contact established with ${updatedFactions[otherBase.owner].name}!`];
+        madeContact = true;
+      }
+    }
+
+    if (madeContact) {
+      updatedFactions[state.currentFaction] = { ...updatedFactions[state.currentFaction], knownFactions: playerKnown };
+      newState = { ...newState, factions: updatedFactions };
+    }
   }
 
   return newState;
@@ -1201,6 +1242,72 @@ export function endTurn(state: GameState): GameState {
   const newVisible = calculateVisibility(finalState, state.currentFaction);
   const newExplored = updateExplored(finalState.explored, state.currentFaction, newVisible);
   finalState = { ...finalState, visible: newVisible, explored: newExplored };
+
+  // ── Faction Contact Detection ──
+  // Check if any faction can now see another faction's units or bases
+  const updatedFactions = [...finalState.factions];
+  let contactMade = false;
+
+  for (let fi = 0; fi < updatedFactions.length; fi++) {
+    const faction = updatedFactions[fi];
+    const newKnown = new Set(faction.knownFactions || []);
+
+    // Check all visible tiles for this faction's units — do they see other factions?
+    // For the human player, use the newVisible set
+    // For AI, calculate their visibility
+    const visibleSet = fi === state.currentFaction
+      ? newVisible
+      : calculateVisibility(finalState, fi);
+
+    // Check units on visible tiles
+    for (const [, unit] of finalState.units) {
+      if (unit.owner === fi || unit.owner < 0) continue;
+      const uKey = hexKey(unit.q, unit.r);
+      if (visibleSet.has(uKey) && !newKnown.has(unit.owner)) {
+        newKnown.add(unit.owner);
+        // Mutual contact
+        const otherKnown = new Set(updatedFactions[unit.owner].knownFactions || []);
+        if (!otherKnown.has(fi)) {
+          otherKnown.add(fi);
+          updatedFactions[unit.owner] = { ...updatedFactions[unit.owner], knownFactions: otherKnown };
+        }
+        if (fi === state.currentFaction) {
+          finalState.log = [...finalState.log, `Contact established with ${updatedFactions[unit.owner].name}!`];
+          contactMade = true;
+        } else if (unit.owner === state.currentFaction) {
+          finalState.log = [...finalState.log, `${faction.name} has made contact with us!`];
+          contactMade = true;
+        }
+      }
+    }
+
+    // Check bases on visible tiles
+    for (const [, base] of finalState.bases) {
+      if (base.owner === fi) continue;
+      const bKey = hexKey(base.q, base.r);
+      if (visibleSet.has(bKey) && !newKnown.has(base.owner)) {
+        newKnown.add(base.owner);
+        const otherKnown = new Set(updatedFactions[base.owner].knownFactions || []);
+        if (!otherKnown.has(fi)) {
+          otherKnown.add(fi);
+          updatedFactions[base.owner] = { ...updatedFactions[base.owner], knownFactions: otherKnown };
+        }
+        if (fi === state.currentFaction) {
+          finalState.log = [...finalState.log, `Contact established with ${updatedFactions[base.owner].name}!`];
+          contactMade = true;
+        } else if (base.owner === state.currentFaction) {
+          finalState.log = [...finalState.log, `${faction.name} has made contact with us!`];
+          contactMade = true;
+        }
+      }
+    }
+
+    if (newKnown.size !== (faction.knownFactions?.size || 0)) {
+      updatedFactions[fi] = { ...updatedFactions[fi], knownFactions: newKnown };
+    }
+  }
+
+  finalState = { ...finalState, factions: updatedFactions };
 
   // Check victory conditions
   const victory = checkVictoryConditions(finalState);

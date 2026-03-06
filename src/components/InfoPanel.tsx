@@ -455,23 +455,34 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
       <div style={styles.section}>
         <div style={styles.sectionTitle}>DIPLOMACY</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          {factions.filter(f => f.id !== currentFaction && !f.isHuman).map(f => (
-            <button
-              key={f.id}
-              style={{
-                ...styles.actionBtn,
-                borderLeft: `3px solid ${f.color}`,
-                fontSize: 11,
-                padding: "3px 8px",
-              }}
-              onClick={() => onContactFaction(f.id)}
-            >
-              {f.leaderName}
-              <span style={{ color: "#556677", marginLeft: 4, fontSize: 10 }}>
-                ({Array.from(bases.values()).filter(b => b.owner === f.id).length} bases)
-              </span>
-            </button>
-          ))}
+          {(() => {
+            const playerKnown = playerFaction?.knownFactions || new Set<number>();
+            const knownFactions = factions.filter(f => f.id !== currentFaction && !f.isHuman && playerKnown.has(f.id));
+            if (knownFactions.length === 0) {
+              return (
+                <div style={{ fontSize: 10, color: "#445566", fontStyle: "italic", padding: "4px 0" }}>
+                  No factions contacted yet. Explore to find them.
+                </div>
+              );
+            }
+            return knownFactions.map(f => (
+              <button
+                key={f.id}
+                style={{
+                  ...styles.actionBtn,
+                  borderLeft: `3px solid ${f.color}`,
+                  fontSize: 11,
+                  padding: "3px 8px",
+                }}
+                onClick={() => onContactFaction(f.id)}
+              >
+                {f.leaderName}
+                <span style={{ color: "#556677", marginLeft: 4, fontSize: 10 }}>
+                  ({Array.from(bases.values()).filter(b => b.owner === f.id).length} bases)
+                </span>
+              </button>
+            ));
+          })()}
         </div>
       </div>
 

@@ -328,10 +328,14 @@ export default function App() {
       if (e.key === "h" || e.key === "H") handleSetOrders("hold");
       if (e.key === "z") handleSetOrders(null); // cancel orders / skip turn
       if (e.key === "d" || e.key === "D") {
-        // Open diplomacy with first AI faction
+        // Open diplomacy with first known AI faction
         if (gameState) {
-          const firstAI = gameState.factions.find(f => !f.isHuman && f.id !== gameState.currentFaction);
-          if (firstAI) setDiplomacyTarget(firstAI);
+          const playerKnown = gameState.factions[gameState.currentFaction]?.knownFactions || new Set();
+          const firstKnownAI = gameState.factions.find(f => !f.isHuman && f.id !== gameState.currentFaction && playerKnown.has(f.id));
+          if (firstKnownAI) {
+            setDiplomacyTarget(firstKnownAI);
+            playFactionIntro(firstKnownAI.key);
+          }
         }
       }
       if (e.key === "Escape") {
