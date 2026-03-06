@@ -457,7 +457,7 @@ export default function App() {
             {" · M.Y. "}{gameState.year}
             {" · Turn "}{gameState.turn}
           </span>
-          <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
+          <div style={{ display: "flex", gap: 4, marginLeft: 8, pointerEvents: "auto" }}>
             <button
               style={gameStyles.topBarBtn}
               onClick={() => {
@@ -498,6 +498,7 @@ export default function App() {
               cursor: "pointer",
               fontFamily: "'Rajdhani', sans-serif",
               marginLeft: 8,
+              pointerEvents: "auto",
             }}
             onClick={() => {
               const next = !soundEnabled;
@@ -723,5 +724,6 @@ const gameStyles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontFamily: "'Rajdhani', sans-serif",
     borderRadius: 2,
+    pointerEvents: "auto",
   } as React.CSSProperties,
 };

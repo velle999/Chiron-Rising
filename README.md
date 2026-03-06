@@ -2,7 +2,7 @@
 
 A 4X strategy game inspired by Sid Meier's Alpha Centauri with LLM-powered diplomacy and original SMAC voice-overs.
 
-Built with Tauri + React + TypeScript.
+Built with Tauri + React + TypeScript. ~7,500 lines across 18 source files.
 
 ## Quick Start
 
@@ -20,7 +20,7 @@ Requires [Rust](https://rustup.rs/) and Tauri CLI.
 
 ```bash
 npm run tauri dev        # Dev mode with hot reload
-npm run tauri build      # Production build
+npm run tauri build      # Production build (.exe / .dmg / .AppImage)
 ```
 
 ## What's In the Game
@@ -31,7 +31,7 @@ npm run tauri build      # Production build
 - 7 SMAC-inspired factions with unique colors and starting bonuses
 - Colony Pods, Terraformers, Scout Patrols, Infantry, Speeders, Probe Teams
 - Base founding, terraforming (farm, mine, solar, forest, road), resource model
-- Simple combat, neutral Mind Worms, turn cycle
+- Neutral Mind Worms, turn cycle
 
 ### Phase 2 — Fog of War & Visuals ✅
 - Full fog of war system (hidden → explored → visible)
@@ -54,7 +54,7 @@ npm run tauri build      # Production build
 - Movement costs: roads free, flat 1, hills 2, fungus 3
 
 ### Phase 5 — Unit Automation & AI Opponents ✅
-- Auto-Former (prioritizes improvements by terrain), Auto-Scout, Auto-Patrol, Sentry, Hold
+- Auto-Former (prioritizes improvements by terrain), Auto-Scout, Auto-Patrol, Sentry, Hold, Fortify
 - AI faction decision-making: base founding, production choices, military AI, expansion
 - AI social engineering (factions pursue their agenda)
 - AI colony pods evaluate terrain quality and found bases at good locations
@@ -76,6 +76,23 @@ npm run tauri build      # Production build
 - Opening narration at game start
 - SMAC-style Operations Director prompts for idle production/research
 - Scroll wheel zoom (cursor-centered, 0.3x–4.0x)
+
+### Phase 8 — Combat, Save/Load, Minimap ✅
+- SMAC-style round-by-round combat resolution
+- Terrain defense: Hills +50%, Mountains +75%, Rolling +25%, Fungus +50%, Forest +25%
+- Base defense +25%, Perimeter Defense +100%, Command Center +25%, Fortify +25%
+- Morale modifiers from SE, psi combat for mindworms, health-based effectiveness
+- Base capture when last defender killed
+- Combat odds preview with win probability bar and modifier list
+- Save/Load: Ctrl+S/Ctrl+L, autosave every 5 turns, file export/import
+- Continue Saved Game on title screen
+- Minimap in bottom-right corner with click-to-jump
+
+### Phase 9 — Secret Projects ✅
+- 19 Secret Projects (wonders) — planet-unique, one builder only
+- Weather Paradigm, Human Genome, Command Nexus, Citizens' Defense Force, Virtual World, Planetary Transit, Supercollider, Ascetic Virtues, Longevity Vaccine, Hunter-Seeker Algorithm, Pholus Mutagen, Cyborg Factory, Theory of Everything, Dream Twister, Voice of Planet, Network Backbone, Planetary Datalinks, Maritime Control, Nano Factory
+- Projects shown in sidebar with builder faction
+- Fortify order for combat units (Shift+F, +25% defense)
 
 ## Sound Effects & Voice-Overs
 
@@ -110,17 +127,20 @@ Also supports llama.cpp (port 8080), OpenAI API, and Anthropic API.
 | **Click + drag** | Pan map |
 | **Enter** | End turn |
 | **B** | Found base (Colony Pod) |
-| **F** | Build farm |
-| **M** | Build mine |
-| **S** | Build solar collector |
-| **P** | Plant forest |
-| **R** | Build road |
+| **F** | Build farm (Former) |
+| **M** | Build mine (Former) |
+| **S** | Build solar collector (Former) |
+| **P** | Plant forest (Former) |
+| **R** | Build road (Former) |
 | **A** | Automate unit |
 | **L** | Sentry mode |
 | **H** | Hold position |
+| **Shift+F** | Fortify (+25% defense) |
 | **Z** | Cancel orders |
 | **E** | Social Engineering picker |
 | **D** | Open diplomacy |
+| **Ctrl+S** | Save game |
+| **Ctrl+L** | Load game |
 | **Esc** | Deselect / close |
 
 ## Project Structure
@@ -134,7 +154,9 @@ chiron-rising/
 │   │   ├── techTree.ts          # 50+ technologies, 4 research tracks
 │   │   ├── socialEngineering.ts # 16 SE choices, 10 social factors
 │   │   ├── unitAutomation.ts    # Auto-former, auto-scout, patrol AI
-│   │   └── aiOpponent.ts        # AI faction decision-making
+│   │   ├── aiOpponent.ts        # AI faction decision-making
+│   │   ├── combat.ts            # SMAC-style combat with terrain/morale modifiers
+│   │   └── saveLoad.ts          # Save/load serialization, autosave, file export
 │   ├── llm/
 │   │   ├── llmClient.ts         # LLM abstraction (Ollama/OpenAI/Anthropic)
 │   │   └── factionPersonalities.ts # Character bibles for all 7 leaders
@@ -145,31 +167,18 @@ chiron-rising/
 │   │   ├── HexMap.tsx           # Canvas hex map renderer with zoom
 │   │   ├── InfoPanel.tsx        # Sidebar: tile info, production, research, SE, diplomacy
 │   │   ├── DiplomacyScreen.tsx  # LLM-powered faction leader conversations
-│   │   └── TurnPrompts.tsx      # Operations Director / Research Director modals
+│   │   ├── TurnPrompts.tsx      # Operations Director / Research Director modals
+│   │   └── Minimap.tsx          # Corner minimap with click-to-jump
 │   ├── App.tsx                  # Main app, setup screen, keyboard shortcuts
 │   └── main.tsx                 # Entry point
 ├── src-tauri/                   # Tauri (Rust) desktop backend
+│   ├── icons/                   # App icons (.ico, .png)
+│   ├── tauri.conf.json          # Tauri v2 config
+│   └── src/
 └── public/
     ├── fx/                      # SMAC sound effects (user-provided)
     └── voices/                  # SMAC voice-overs (user-provided)
 ```
-
-### Phase 8 — Combat, Save/Load, Minimap ✅
-- SMAC-style round-by-round combat resolution
-- Terrain defense: Hills +50%, Mountains +75%, Rolling +25%, Fungus +50%, Forest +25%
-- Base defense +25%, Perimeter Defense +100%, Command Center +25%, Fortify +25%
-- Morale modifiers from SE, psi combat for mindworms, health-based effectiveness
-- Base capture when last defender killed
-- Combat odds preview with win probability bar and modifier list
-- Save/Load: Ctrl+S/Ctrl+L, autosave every 5 turns, file export/import
-- Continue Saved Game on title screen
-- Minimap in bottom-right corner with click-to-jump
-
-### Phase 9 — Secret Projects ✅
-- 19 Secret Projects (wonders) — planet-unique, one builder only
-- Projects include: Weather Paradigm, Human Genome, Command Nexus, Virtual World, Planetary Transit, Supercollider, Hunter-Seeker Algorithm, Cyborg Factory, Voice of Planet, and more
-- Projects shown in sidebar with builder faction
-- Fortify order for combat units (Shift+F, +25% defense)
 
 ## Roadmap — What's Next
 
