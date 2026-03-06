@@ -2,7 +2,7 @@
 
 A 4X strategy game inspired by Sid Meier's Alpha Centauri with LLM-powered diplomacy and original SMAC voice-overs.
 
-Built with Tauri + React + TypeScript. ~7,500 lines across 18 source files.
+Built with Tauri + React + TypeScript. ~9,000 lines across 23 source files.
 
 ## Quick Start
 
