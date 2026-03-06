@@ -194,12 +194,23 @@ chiron-rising/
 - Defeat detection: eliminated if you lose all bases and colony pods
 - Victory screen with Continue Playing / New Game options
 
+### Phase 11 — Territory, Treaties, Population ✅
+- Faction contact system: must discover factions by spotting their units/bases before diplomacy
+- Treaty system: No Treaty → Truce → Treaty of Friendship → Pact of Brotherhood → Vendetta
+- Territory enforcement: trespassing without a treaty warns player and damages relations (-3 per move)
+- AI respects borders: won't enter your territory without a treaty or vendetta
+- Treaty management in diplomacy screen with status bar and action buttons
+- Drone riots: bases with pop > 3 generate drones, reduced by facilities and police units; riots halt production
+- Golden Age: no drones + talents ≥ pop + pop ≥ 3 = double growth rate
+- Territory expansion: bases auto-claim tiles in expanding radius as population grows
+- Auto-work: new citizens automatically assigned to best available tile
+- Drone/Golden Age status displayed in base info panel
+
 ## Roadmap — What's Next
 
 - [ ] Unit designer (weapon + armor + chassis combinations)
-- [ ] Drone riots / golden age / specialists
 - [ ] Naval units and ocean gameplay
-- [ ] Diplomacy actions with game effects (treaties, pacts, vendetta)
+- [ ] Specialists (doctors, engineers, librarians)
 - [ ] Multiplayer (stretch goal)
 
 ---

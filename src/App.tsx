@@ -19,6 +19,8 @@ import { playTechVoice, playFacilityVoice, playFactionIntro, playOpeningNarratio
 import { saveGame, loadGame, autoSave, loadAutoSave, hasSave, hasAutoSave, exportSaveToFile, importSaveFromFile, getSaveInfo } from "./game/saveLoad";
 import { checkVictoryConditions } from "./game/projectsAndVictory";
 import { setTreaty, TreatyType } from "./game/diplomacy";
+import UnitDesigner from "./components/UnitDesigner";
+import { UnitDesign, getDesignStats as calcDesignStats } from "./game/unitDesigner";
 
 // ─── Base Name Generator ─────────────────────────────────────
 
@@ -47,6 +49,7 @@ export default function App() {
   const [mapViewSize, setMapViewSize] = useState({ w: 800, h: 600 });
   const [minimapCameraTarget, setMinimapCameraTarget] = useState<{x:number,y:number}|null>(null);
   const [victoryMessage, setVictoryMessage] = useState<string | null>(null);
+  const [showUnitDesigner, setShowUnitDesigner] = useState(false);
   const prevLogLength = useRef(0);
   const audioInitialized = useRef(false);
 
@@ -286,7 +289,7 @@ export default function App() {
     const handler = (e: KeyboardEvent) => {
       if (!gameState) return;
       // Block shortcuts when modals are open
-      if (turnPrompts.length > 0 || diplomacyTarget) return;
+      if (turnPrompts.length > 0 || diplomacyTarget || showUnitDesigner) return;
 
       // Save/Load
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
@@ -342,6 +345,9 @@ export default function App() {
       if (e.key === "Escape") {
         setGameState({ ...gameState, selectedUnit: null, selectedTile: null });
       }
+      if (e.key === "w" || e.key === "W") {
+        setShowUnitDesigner(true);
+      }
 
       // Numpad movement for selected unit (pointy-top hex directions)
       // Also support arrow-key style with Home/End/PgUp/PgDn
@@ -375,7 +381,7 @@ export default function App() {
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [gameState, handleEndTurn, handleFoundBase, handleBuildImprovement, handleSetOrders, turnPrompts, diplomacyTarget]);
+  }, [gameState, handleEndTurn, handleFoundBase, handleBuildImprovement, handleSetOrders, turnPrompts, diplomacyTarget, showUnitDesigner]);
 
   // ─── Setup Screen ──────────────────────────────────────
 
@@ -594,6 +600,31 @@ export default function App() {
           }}
         />
       )}
+      {/* Unit Designer */}
+      {showUnitDesigner && gameState && (() => {
+        const faction = gameState.factions[gameState.currentFaction];
+        if (!faction) return null;
+        return (
+          <UnitDesigner
+            discoveredTechs={faction.discoveredTechs}
+            factionId={gameState.currentFaction}
+            onDesign={(design) => {
+              // Add design to custom designs list
+              const newDesigns = [...(gameState.customDesigns || []), design];
+              // Add as buildable item in production
+              const designKey = `custom_${design.name.replace(/\s+/g, "_").toLowerCase()}_${newDesigns.length}`;
+              const stats = calcDesignStats(design);
+              setGameState({
+                ...gameState,
+                customDesigns: newDesigns,
+                log: [...gameState.log, `New unit design: ${design.name} (Atk:${stats.attack} Def:${stats.defense} Move:${stats.moves} HP:${stats.hp} Cost:${stats.cost})`],
+              });
+              setShowUnitDesigner(false);
+            }}
+            onClose={() => setShowUnitDesigner(false)}
+          />
+        );
+      })()}
       {/* Turn Prompts */}
       {turnPrompts.length > 0 && currentPromptIndex < turnPrompts.length && (() => {
         const prompt = turnPrompts[currentPromptIndex];

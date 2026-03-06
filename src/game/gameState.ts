@@ -23,6 +23,7 @@ import { processAITurn } from "./aiOpponent";
 import { resolveCombatDetailed } from "./combat";
 import { getProjectBonuses, healUnits, checkVictoryConditions, getFreeFacilities } from "./projectsAndVictory";
 import { checkTerritoryEntry, adjustRelation, atWar } from "./diplomacy";
+import { UnitDesign, getDesignStats } from "./unitDesigner";
 
 // ─── Resource Types ──────────────────────────────────────────
 
@@ -80,6 +81,10 @@ export const BUILD_CATALOG: BuildItem[] = [
   { key: "genejack_factory",   name: "Genejack Factory",   category: "facility", cost: 100, maintenance: 2, description: "+50% minerals, +1 drone",                     requiresTech: "retroviral_engineering" },
   { key: "aerospace_complex",  name: "Aerospace Complex",  category: "facility", cost: 80,  maintenance: 2, description: "+2 morale for air units",                     requiresTech: "doctrine_air_power" },
   { key: "robotic_assembly",   name: "Robotic Assembly Plant", category: "facility", cost: 200, maintenance: 4, description: "+50% minerals",                           requiresTech: "industrial_nanorobotics" },
+  { key: "hologram_theatre",   name: "Hologram Theatre",    category: "facility", cost: 60,  maintenance: 1, description: "-2 drones via entertainment",                requiresTech: "planetary_networks" },
+  { key: "pressure_dome",      name: "Pressure Dome",       category: "facility", cost: 60,  maintenance: 1, description: "Required for aquatic bases",                 requiresTech: "doctrine_flexibility" },
+  { key: "centauri_preserve",  name: "Centauri Preserve",   category: "facility", cost: 80,  maintenance: 2, description: "+1 Planet rating at this base",              requiresTech: "centauri_meditation" },
+  { key: "skunkworks",         name: "Skunkworks",          category: "facility", cost: 100, maintenance: 2, description: "All units built here have 2 special abilities", requiresTech: "adv_subatomic_theory" },
 
   // ── Stockpile ──
   { key: "stockpile_energy",   name: "Stockpile Energy",   category: "facility", cost: 0,   maintenance: 0, description: "Convert excess minerals to energy" },
@@ -211,6 +216,8 @@ export interface GameState {
   visible: Set<string>;
   // Secret Projects completed: projectKey -> { owner: factionIndex, baseId }
   completedProjects: Map<string, { owner: number; baseId: string }>;
+  // Custom unit designs per faction
+  customDesigns: UnitDesign[];
 }
 
 // ─── Faction Definitions ─────────────────────────────────────
@@ -326,6 +333,30 @@ export function createUnit(type: UnitType, q: number, r: number, owner: number):
     movesLeft: s.moves, maxMoves: s.moves,
     health: s.hp, maxHealth: s.hp,
     attack: s.atk, defense: s.def,
+    orders: null,
+  };
+}
+
+export function createDesignedUnit(design: UnitDesign, q: number, r: number, owner: number): Unit {
+  const stats = getDesignStats(design);
+  const id = `unit_${nextUnitId++}`;
+  // Map chassis to UnitType for rendering
+  const typeMap: Record<string, UnitType> = {
+    infantry: UnitType.Infantry,
+    speeder: UnitType.Speeder,
+    hovertank: UnitType.Speeder,
+    foil: UnitType.Scout,
+    cruiser: UnitType.Scout,
+    needlejet: UnitType.Scout,
+    copter: UnitType.Scout,
+  };
+  const type = typeMap[design.chassis] || UnitType.Infantry;
+
+  return {
+    id, type, q, r, owner,
+    movesLeft: stats.moves, maxMoves: stats.moves,
+    health: stats.hp, maxHealth: stats.hp,
+    attack: stats.attack, defense: stats.defense,
     orders: null,
   };
 }
@@ -468,6 +499,7 @@ export function initializeGame(
     explored,
     visible: new Set(),
     completedProjects: new Map(),
+    customDesigns: [],
   };
 
   // Calculate initial visibility for all factions
@@ -985,7 +1017,8 @@ export function endTurn(state: GameState): GameState {
 
   // Process bases — production and growth
   const newBases = new Map<string, Base>();
-  for (const [id, base] of state.bases) {
+  for (const [id, baseOrig] of state.bases) {
+    let base = baseOrig;
     let totalNutrients = 0;
     let totalMinerals = 0;
     let totalEnergy = 0;
@@ -1029,9 +1062,44 @@ export function endTurn(state: GameState): GameState {
     let newPop = base.population;
     let newStoredNutrients = base.storedNutrients + surplus;
 
+    // ── Drone/Talent Calculation ──
+    // Base drones = pop - 3 (simplified: every citizen above 3 is a drone)
+    let drones = Math.max(0, newPop - 3);
+    let talents = 1; // Base 1 talent
+
+    // Recreation Commons: -2 drones
+    if (base.facilities.includes("recreation_commons")) drones = Math.max(0, drones - 2);
+    // Research Hospital: -1 drone
+    if (base.facilities.includes("research_hospital")) drones = Math.max(0, drones - 1);
+    // Hologram Theatre: -2 drones
+    if (base.facilities.includes("hologram_theatre")) drones = Math.max(0, drones - 2);
+    // Children's Creche: -1 drone
+    if (base.facilities.includes("children_creche")) drones = Math.max(0, drones - 1);
+    // Police factor: military units in base suppress drones
+    const policeUnits = Math.min(
+      factors.police + 1,
+      Array.from(newUnits.values()).filter(u => u.q === base.q && u.r === base.r && u.owner === base.owner &&
+        (u.type === UnitType.Infantry || u.type === UnitType.Speeder)).length
+    );
+    drones = Math.max(0, drones - Math.max(0, policeUnits));
+
+    // Check for drone riot (drones > talents)
+    const isDroneRiot = drones > talents;
+    // Check for golden age (talents >= pop && pop >= 3 && no drones)
+    const isGoldenAge = talents >= newPop && newPop >= 3 && drones === 0;
+
+    if (isDroneRiot) {
+      log.push(`Drone riots in ${base.name}! Production halted.`);
+    }
+    if (isGoldenAge) {
+      log.push(`Golden Age in ${base.name}!`);
+    }
+
     // Growth — apply growth factor
     const growthModifier = 1.0 + (factors.growth * 0.1); // +/-10% per level
-    const growthThreshold = Math.max(5, Math.floor((newPop + 1) * 10 / growthModifier));
+    // Golden age doubles growth
+    const goldenGrowthBonus = isGoldenAge ? 2.0 : 1.0;
+    const growthThreshold = Math.max(5, Math.floor((newPop + 1) * 10 / (growthModifier * goldenGrowthBonus)));
 
     if (factors.growth >= 6) {
       // POPULATION BOOM: grow every turn if nutrients available
@@ -1044,14 +1112,55 @@ export function endTurn(state: GameState): GameState {
       newPop++;
       newStoredNutrients -= growthThreshold;
       log.push(`${base.name} has grown to size ${newPop}!`);
+
+      // Territory expansion on growth — claim a new ring of tiles
+      if (newPop % 2 === 0) {
+        const radius = Math.min(3, Math.floor(newPop / 2));
+        for (let dq = -radius; dq <= radius; dq++) {
+          for (let dr = Math.max(-radius, -dq - radius); dr <= Math.min(radius, -dq + radius); dr++) {
+            const tq = base.q + dq;
+            const tr = base.r + dr;
+            const tk = hexKey(tq, tr);
+            const tt = newState.map.tiles.get(tk);
+            if (tt && tt.owner === null) {
+              const updatedTiles = new Map(newState.map.tiles);
+              updatedTiles.set(tk, { ...tt, owner: base.owner });
+              newState = { ...newState, map: { ...newState.map, tiles: updatedTiles } };
+            }
+          }
+        }
+      }
+
+      // Auto-assign new citizen to work best available tile
+      const baseKey = hexKey(base.q, base.r);
+      const workedSet = new Set(base.workedTiles);
+      let bestTile: string | null = null;
+      let bestValue = -1;
+      for (let dq = -2; dq <= 2; dq++) {
+        for (let dr = Math.max(-2, -dq - 2); dr <= Math.min(2, -dq + 2); dr++) {
+          const tq = base.q + dq;
+          const tr = base.r + dr;
+          const tk = hexKey(tq, tr);
+          if (workedSet.has(tk)) continue;
+          const tt = newState.map.tiles.get(tk);
+          if (!tt || tt.terrain === Terrain.Ocean || tt.terrain === Terrain.DeepOcean || tt.terrain === Terrain.Shelf) continue;
+          if (tt.owner !== null && tt.owner !== base.owner) continue;
+          const res = getTileResources(tt);
+          const val = res.nutrients * 3 + res.minerals * 2 + res.energy;
+          if (val > bestValue) { bestValue = val; bestTile = tk; }
+        }
+      }
+      if (bestTile) {
+        base = { ...base, workedTiles: [...base.workedTiles, bestTile] };
+      }
     } else if (newStoredNutrients < -10) {
       newPop = Math.max(1, newPop - 1);
       newStoredNutrients = 0;
       log.push(`Starvation in ${base.name}!`);
     }
 
-    // ── Production ──
-    const effectiveMinerals = Math.max(0, Math.floor(totalMinerals * industryMultiplier));
+    // ── Production (halted during drone riots) ──
+    const effectiveMinerals = isDroneRiot ? 0 : Math.max(0, Math.floor(totalMinerals * industryMultiplier));
     let newBuildProgress = base.buildProgress + effectiveMinerals;
     let newCurrentBuild = base.currentBuild;
     let newFacilities = [...base.facilities];

@@ -201,6 +201,22 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
             Pop: {baseAtTile.population} ·
             Food: {baseAtTile.storedNutrients}
           </div>
+          {/* Drone/Golden Age status */}
+          {(() => {
+            const pop = baseAtTile.population;
+            let drones = Math.max(0, pop - 3);
+            if (baseAtTile.facilities.includes("recreation_commons")) drones = Math.max(0, drones - 2);
+            if (baseAtTile.facilities.includes("research_hospital")) drones = Math.max(0, drones - 1);
+            if (baseAtTile.facilities.includes("hologram_theatre")) drones = Math.max(0, drones - 2);
+            if (baseAtTile.facilities.includes("children_creche")) drones = Math.max(0, drones - 1);
+            const talents = 1;
+            const isDroneRiot = drones > talents;
+            const isGoldenAge = talents >= pop && pop >= 3 && drones === 0;
+            if (isDroneRiot) return <div style={{ color: "#cc4444", fontSize: 11, fontWeight: 700 }}>⚠ DRONE RIOTS — Production halted</div>;
+            if (isGoldenAge) return <div style={{ color: "#ffcc44", fontSize: 11, fontWeight: 700 }}>★ GOLDEN AGE — Double growth</div>;
+            if (drones > 0) return <div style={{ color: "#cc884488", fontSize: 10 }}>Drones: {drones} · Talents: {talents}</div>;
+            return null;
+          })()}
           <div style={styles.dim}>
             Facilities: {baseAtTile.facilities.join(", ") || "none"}
           </div>
