@@ -14,6 +14,8 @@ interface HexMapProps {
   gameState: GameState;
   onTileClick: (q: number, r: number) => void;
   onTileRightClick: (q: number, r: number) => void;
+  onCameraChange?: (x: number, y: number, zoom: number, viewW: number, viewH: number) => void;
+  setCameraTo?: { x: number; y: number } | null;
 }
 
 const HEX_SIZE = 20;
@@ -364,7 +366,7 @@ function drawUnitIcon(ctx: CanvasRenderingContext2D, x: number, y: number, type:
 
 // ─── Main Component ───────────────────────────────────────────
 
-export default function HexMap({ gameState, onTileClick, onTileRightClick }: HexMapProps) {
+export default function HexMap({ gameState, onTileClick, onTileRightClick, onCameraChange, setCameraTo }: HexMapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [camera, setCamera] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1.0);
@@ -374,6 +376,13 @@ export default function HexMap({ gameState, onTileClick, onTileRightClick }: Hex
   const [hoveredTile, setHoveredTile] = useState<string | null>(null);
 
   const { map, units, bases, selectedUnit, selectedTile, factions, currentFaction } = gameState;
+
+  // Handle external camera set (e.g. from minimap click)
+  useEffect(() => {
+    if (setCameraTo) {
+      setCamera({ x: -setCameraTo.x, y: -setCameraTo.y });
+    }
+  }, [setCameraTo]);
 
   const draw = useCallback((ctx: CanvasRenderingContext2D, width: number, height: number, time: number) => {
     ctx.fillStyle = "#040810";
@@ -641,6 +650,7 @@ export default function HexMap({ gameState, onTileClick, onTileRightClick }: Hex
     if (!ctx) return;
 
     let af: number;
+    let lastReportedCamera = "";
     const loop = (t: number) => {
       const rect = canvas.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
@@ -648,6 +658,16 @@ export default function HexMap({ gameState, onTileClick, onTileRightClick }: Hex
       canvas.height = rect.height * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       draw(ctx, rect.width, rect.height, t);
+
+      // Report camera changes (throttled)
+      if (onCameraChange) {
+        const camKey = `${camera.x},${camera.y},${zoom}`;
+        if (camKey !== lastReportedCamera) {
+          lastReportedCamera = camKey;
+          onCameraChange(camera.x, camera.y, zoom, rect.width, rect.height);
+        }
+      }
+
       af = requestAnimationFrame(loop);
     };
     af = requestAnimationFrame(loop);

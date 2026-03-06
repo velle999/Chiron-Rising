@@ -153,10 +153,10 @@ class SoundManager {
   }
 
   // Load a sound file into the buffer cache
-  private async loadSound(filename: string): Promise<AudioBuffer | null> {
+  private async loadSound(filename: string): Promise<AudioBuffer | undefined> {
     if (this.bufferCache.has(filename)) return this.bufferCache.get(filename)!;
-    if (this.loading.has(filename)) return null; // Already loading
-    if (!this.audioContext) return null;
+    if (this.loading.has(filename)) return undefined;
+    if (!this.audioContext) return undefined;
 
     this.loading.add(filename);
 
@@ -166,7 +166,7 @@ class SoundManager {
       if (!response.ok) {
         console.warn(`Sound not found: ${filename}`);
         this.loading.delete(filename);
-        return null;
+        return undefined;
       }
       const arrayBuffer = await response.arrayBuffer();
       const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
@@ -176,7 +176,7 @@ class SoundManager {
     } catch (err) {
       console.warn(`Failed to load sound: ${filename}`, err);
       this.loading.delete(filename);
-      return null;
+      return undefined;
     }
   }
 

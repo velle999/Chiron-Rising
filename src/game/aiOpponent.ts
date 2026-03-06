@@ -237,7 +237,7 @@ function chooseAIProduction(
   faction: any,
   state: GameState
 ): string | null {
-  const available = getAvailableBuilds(base, faction.discoveredTechs);
+  const available = getAvailableBuilds(base, faction.discoveredTechs, state.completedProjects);
   if (available.length === 0) return "unit_scout";
 
   // Count our units and bases

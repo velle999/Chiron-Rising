@@ -10,7 +10,6 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
-    "title": "Chiron Rising",
     "windows": [
       {
         "title": "Chiron Rising",
@@ -24,5 +23,14 @@
     "security": {
       "csp": null
     }
+  },
+  "bundle": {
+    "active": true,
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png",
+      "icons/128x128.png",
+      "icons/32x32.png"
+    ]
   }
 }

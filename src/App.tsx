@@ -6,6 +6,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import HexMap from "./components/HexMap";
 import InfoPanel from "./components/InfoPanel";
 import DiplomacyScreen from "./components/DiplomacyScreen";
+import Minimap from "./components/Minimap";
 import { ProductionPrompt, ResearchPrompt, getTurnPrompts, TurnPrompt } from "./components/TurnPrompts";
 import { hexKey } from "./game/hexMap";
 import {
@@ -15,6 +16,7 @@ import {
 } from "./game/gameState";
 import { soundManager, playSoundsForLog } from "./audio/soundSystem";
 import { playTechVoice, playFacilityVoice, playFactionIntro, playOpeningNarration, TECH_VOICE_MAP } from "./audio/voiceSystem";
+import { saveGame, loadGame, autoSave, loadAutoSave, hasSave, hasAutoSave, exportSaveToFile, importSaveFromFile, getSaveInfo } from "./game/saveLoad";
 
 // ─── Base Name Generator ─────────────────────────────────────
 
@@ -39,6 +41,9 @@ export default function App() {
   const [turnPrompts, setTurnPrompts] = useState<TurnPrompt[]>([]);
   const [currentPromptIndex, setCurrentPromptIndex] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [mapCamera, setMapCamera] = useState({ x: 0, y: 0, zoom: 1 });
+  const [mapViewSize, setMapViewSize] = useState({ w: 800, h: 600 });
+  const [minimapCameraTarget, setMinimapCameraTarget] = useState<{x:number,y:number}|null>(null);
   const prevLogLength = useRef(0);
   const audioInitialized = useRef(false);
 
@@ -239,6 +244,11 @@ export default function App() {
       setCurrentPromptIndex(0);
       soundManager.play("new_orders");
     }
+
+    // Autosave every 5 turns
+    if (newState.turn % 5 === 0) {
+      autoSave(newState);
+    }
   }, [gameState]);
 
   const handleChangeProduction = useCallback((baseId: string, buildKey: string) => {
@@ -269,6 +279,24 @@ export default function App() {
       // Block shortcuts when modals are open
       if (turnPrompts.length > 0 || diplomacyTarget) return;
 
+      // Save/Load
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        if (gameState) {
+          saveGame(gameState);
+          setGameState({ ...gameState, log: [...gameState.log, "Game saved."] });
+        }
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "l") {
+        e.preventDefault();
+        const loaded = loadGame();
+        if (loaded) {
+          setGameState(loaded);
+        }
+        return;
+      }
+
       if (e.key === "Enter") {
         e.preventDefault();
         handleEndTurn();
@@ -276,7 +304,8 @@ export default function App() {
       if (e.key === "b" || e.key === "B") {
         handleFoundBase();
       }
-      if (e.key === "f") handleBuildImprovement("farm");
+      if (e.key === "f" && !e.shiftKey) handleBuildImprovement("farm");
+      if (e.key === "F" && e.shiftKey) handleSetOrders("fortify");
       if (e.key === "m") handleBuildImprovement("mine");
       if (e.key === "s") handleBuildImprovement("solar");
       if (e.key === "p") handleBuildImprovement("forest");
@@ -367,6 +396,28 @@ export default function App() {
           <button style={setupStyles.startBtn} onClick={startGame}>
             ▸ COMMENCE PLANETFALL
           </button>
+          {(hasSave() || hasAutoSave()) && (
+            <button
+              style={{ ...setupStyles.startBtn, background: "#111a2a", marginTop: 8 }}
+              onClick={() => {
+                if (!audioInitialized.current) {
+                  soundManager.init();
+                  audioInitialized.current = true;
+                }
+                const loaded = loadGame() || loadAutoSave();
+                if (loaded) {
+                  setGameState(loaded);
+                  setShowSetup(false);
+                }
+              }}
+            >
+              ▸ CONTINUE SAVED GAME
+              {(() => {
+                const info = getSaveInfo() || getSaveInfo("chiron_rising_autosave");
+                return info ? ` (Turn ${info.turn}, ${info.faction})` : "";
+              })()}
+            </button>
+          )}
         </div>
       </div>
     );
@@ -383,6 +434,20 @@ export default function App() {
           gameState={gameState}
           onTileClick={handleTileClick}
           onTileRightClick={handleTileRightClick}
+          onCameraChange={(x, y, z, vw, vh) => {
+            setMapCamera({ x, y, zoom: z });
+            setMapViewSize({ w: vw, h: vh });
+          }}
+          setCameraTo={minimapCameraTarget}
+        />
+        {/* Minimap */}
+        <Minimap
+          gameState={gameState}
+          camera={mapCamera}
+          zoom={mapCamera.zoom}
+          viewWidth={mapViewSize.w}
+          viewHeight={mapViewSize.h}
+          onClickMap={(x, y) => setMinimapCameraTarget({ x, y })}
         />
         {/* Top bar */}
         <div style={gameStyles.topBar}>
@@ -392,6 +457,37 @@ export default function App() {
             {" · M.Y. "}{gameState.year}
             {" · Turn "}{gameState.turn}
           </span>
+          <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
+            <button
+              style={gameStyles.topBarBtn}
+              onClick={() => {
+                saveGame(gameState);
+                setGameState({ ...gameState, log: [...gameState.log, "Game saved."] });
+              }}
+              title="Save (Ctrl+S)"
+            >💾</button>
+            <button
+              style={gameStyles.topBarBtn}
+              onClick={() => {
+                const loaded = loadGame();
+                if (loaded) setGameState(loaded);
+              }}
+              title="Load (Ctrl+L)"
+            >📂</button>
+            <button
+              style={gameStyles.topBarBtn}
+              onClick={() => exportSaveToFile(gameState)}
+              title="Export save to file"
+            >📤</button>
+            <button
+              style={gameStyles.topBarBtn}
+              onClick={async () => {
+                const loaded = await importSaveFromFile();
+                if (loaded) setGameState(loaded);
+              }}
+              title="Import save from file"
+            >📥</button>
+          </div>
           <button
             style={{
               background: "none",
@@ -618,4 +714,14 @@ const gameStyles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     color: "#445566",
   },
+  topBarBtn: {
+    background: "none",
+    border: "1px solid #1a2a44",
+    color: "#88aacc",
+    padding: "2px 6px",
+    fontSize: 12,
+    cursor: "pointer",
+    fontFamily: "'Rajdhani', sans-serif",
+    borderRadius: 2,
+  } as React.CSSProperties,
 };

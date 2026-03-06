@@ -9,6 +9,7 @@ import {
   getSocialChoice, ALL_FACTORS, getFactorEffect, SocialFactor
 } from "../game/socialEngineering";
 import { hexKey, MapTile, Terrain, Moisture } from "../game/hexMap";
+import { getCombatOdds } from "../game/combat";
 
 interface InfoPanelProps {
   gameState: GameState;
@@ -250,7 +251,7 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
                 <div id={"prod-picker-" + baseAtTile.id} style={{ display: "none", marginTop: 6 }}>
                   <div style={{ color: "#667788", fontSize: 10, marginBottom: 4 }}>SELECT BUILD ORDER:</div>
                   <div style={{ maxHeight: 200, overflowY: "auto" }}>
-                    {getAvailableBuilds(baseAtTile, playerFaction?.discoveredTechs || []).map(item => (
+                    {getAvailableBuilds(baseAtTile, playerFaction?.discoveredTechs || [], gameState.completedProjects).map(item => (
                       <button
                         key={item.key}
                         style={{
@@ -305,6 +306,46 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
               }
             </div>
           )}
+          {/* Combat odds preview — show when we have a selected friendly unit */}
+          {unit.owner === currentFaction && unit.attack > 0 && (() => {
+            // Find adjacent or same-tile enemies
+            const nearbyEnemies = Array.from(units.values()).filter(u => {
+              if (u.owner === currentFaction || u.owner === -2) return false;
+              const dq = Math.abs(u.q - unit.q);
+              const dr = Math.abs(u.r - unit.r);
+              const ds = Math.abs((u.q + u.r) - (unit.q + unit.r));
+              return Math.max(dq, dr, ds) <= 1 && (dq + dr + ds > 0);
+            });
+            if (nearbyEnemies.length === 0) return null;
+            return (
+              <div style={{ marginTop: 4, borderTop: "1px solid #1a2a44", paddingTop: 4 }}>
+                <div style={{ fontSize: 10, color: "#cc6644", fontFamily: "'Orbitron', sans-serif", letterSpacing: "0.1em" }}>
+                  COMBAT ODDS
+                </div>
+                {nearbyEnemies.slice(0, 3).map(enemy => {
+                  const odds = getCombatOdds(gameState, unit, enemy);
+                  const pct = Math.round(odds.attackerChance * 100);
+                  const barColor = pct >= 60 ? "#44cc66" : pct >= 40 ? "#ccaa44" : "#cc4444";
+                  return (
+                    <div key={enemy.id} style={{ fontSize: 11, marginTop: 3 }}>
+                      <div style={{ color: "#8899aa" }}>
+                        vs {unitTypeNames[enemy.type] || enemy.type}
+                        <span style={{ color: barColor, fontWeight: 700, marginLeft: 4 }}>{pct}%</span>
+                      </div>
+                      <div style={{ background: "#0a1020", height: 4, borderRadius: 2, marginTop: 2 }}>
+                        <div style={{ background: barColor, height: "100%", borderRadius: 2, width: `${pct}%`, transition: "width 0.3s" }} />
+                      </div>
+                      {odds.defMods.length > 0 && (
+                        <div style={{ fontSize: 9, color: "#556677", marginTop: 1 }}>
+                          {odds.defMods.map(m => m.name).join(", ")}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -391,6 +432,25 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
         );
       })()}
 
+      {/* Secret Projects */}
+      {gameState.completedProjects && gameState.completedProjects.size > 0 && (
+        <div style={styles.section}>
+          <div style={styles.sectionTitle}>SECRET PROJECTS</div>
+          {Array.from(gameState.completedProjects.entries()).map(([key, info]) => {
+            const item = getBuildItem(key);
+            const ownerFaction = factions[info.owner];
+            return (
+              <div key={key} style={{ fontSize: 10, marginBottom: 2 }}>
+                <span style={{ color: "#ffcc44" }}>{item?.name || key}</span>
+                <span style={{ color: ownerFaction?.color || "#556677", marginLeft: 4 }}>
+                  ({ownerFaction?.name.split(" ").pop() || "?"})
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Diplomacy */}
       <div style={styles.section}>
         <div style={styles.sectionTitle}>DIPLOMACY</div>
@@ -456,6 +516,11 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
               <button style={styles.actionBtn} onClick={() => onSetOrders("hold")}>
                 [H] Hold Position
               </button>
+              {(unit.type === UnitType.Infantry || unit.type === UnitType.Speeder || unit.type === UnitType.Scout) && (
+                <button style={styles.actionBtn} onClick={() => onSetOrders("fortify")}>
+                  [Shift+F] Fortify
+                </button>
+              )}
               {unit.orders && (
                 <button style={styles.actionBtn} onClick={() => onSetOrders(null)}>
                   [Z] Cancel Orders

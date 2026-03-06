@@ -154,17 +154,31 @@ chiron-rising/
     └── voices/                  # SMAC voice-overs (user-provided)
 ```
 
+### Phase 8 — Combat, Save/Load, Minimap ✅
+- SMAC-style round-by-round combat resolution
+- Terrain defense: Hills +50%, Mountains +75%, Rolling +25%, Fungus +50%, Forest +25%
+- Base defense +25%, Perimeter Defense +100%, Command Center +25%, Fortify +25%
+- Morale modifiers from SE, psi combat for mindworms, health-based effectiveness
+- Base capture when last defender killed
+- Combat odds preview with win probability bar and modifier list
+- Save/Load: Ctrl+S/Ctrl+L, autosave every 5 turns, file export/import
+- Continue Saved Game on title screen
+- Minimap in bottom-right corner with click-to-jump
+
+### Phase 9 — Secret Projects ✅
+- 19 Secret Projects (wonders) — planet-unique, one builder only
+- Projects include: Weather Paradigm, Human Genome, Command Nexus, Virtual World, Planetary Transit, Supercollider, Hunter-Seeker Algorithm, Cyborg Factory, Voice of Planet, and more
+- Projects shown in sidebar with builder faction
+- Fortify order for combat units (Shift+F, +25% defense)
+
 ## Roadmap — What's Next
 
-- [ ] Proper combat system (terrain defense, morale bonuses, base defense, attack/defense ratings)
+- [ ] Secret project global effects (currently tracked but effects not all applied)
 - [ ] Unit designer (weapon + armor + chassis combinations)
-- [ ] Secret projects (wonders with global effects)
 - [ ] Drone riots / golden age / specialists
 - [ ] Naval units and ocean gameplay
 - [ ] Diplomacy actions with game effects (treaties, pacts, vendetta)
 - [ ] Victory conditions (Transcendence, Conquest, Diplomatic, Economic)
-- [ ] Save/load game state
-- [ ] Minimap
 - [ ] Multiplayer (stretch goal)
 
 ---

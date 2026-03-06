@@ -20,6 +20,7 @@ import {
 import { processAutomatedUnits } from "./unitAutomation";
 
 import { processAITurn } from "./aiOpponent";
+import { resolveCombatDetailed } from "./combat";
 
 // ─── Resource Types ──────────────────────────────────────────
 
@@ -27,6 +28,17 @@ export interface Resources {
   nutrients: number;
   minerals: number;
   energy: number;
+}
+
+// ─── Unit Types ─────────────────────────────────────────────
+
+export enum UnitType {
+  Colony = "colony",
+  Former = "former",
+  Scout = "scout",
+  Infantry = "infantry",
+  Speeder = "speeder",
+  Mindworm = "mindworm",
 }
 
 // ─── Production Catalog ──────────────────────────────────────
@@ -69,6 +81,27 @@ export const BUILD_CATALOG: BuildItem[] = [
 
   // ── Stockpile ──
   { key: "stockpile_energy",   name: "Stockpile Energy",   category: "facility", cost: 0,   maintenance: 0, description: "Convert excess minerals to energy" },
+
+  // ── Secret Projects (wonders — one per planet) ──
+  { key: "sp_weather_paradigm",       name: "The Weather Paradigm",        category: "project", cost: 200,  description: "Free Condenser/Borehole for all formers. Bonus terraforming speed.",  requiresTech: "ecological_engineering" },
+  { key: "sp_human_genome",           name: "The Human Genome Project",    category: "project", cost: 160,  description: "+1 talent at every base.",                                            requiresTech: "biogenetics" },
+  { key: "sp_command_nexus",          name: "The Command Nexus",           category: "project", cost: 200,  description: "+2 morale for all units. Free Command Center at every base.",          requiresTech: "doctrine_loyalty" },
+  { key: "sp_citizens_defense",       name: "The Citizens' Defense Force", category: "project", cost: 200,  description: "Free Perimeter Defense at every base.",                               requiresTech: "intellectual_integrity" },
+  { key: "sp_virtual_world",          name: "The Virtual World",           category: "project", cost: 200,  description: "Network Nodes count as Hologram Theatres. -2 drones per base.",       requiresTech: "planetary_networks" },
+  { key: "sp_planetary_transit",      name: "The Planetary Transit System",category: "project", cost: 160,  description: "New bases start with population 3. +1 population at all bases.",      requiresTech: "industrial_automation" },
+  { key: "sp_supercollider",          name: "The Supercollider",           category: "project", cost: 300,  description: "+100% labs at this base.",                                             requiresTech: "applied_relativity" },
+  { key: "sp_ascetic_virtues",        name: "The Ascetic Virtues",         category: "project", cost: 200,  description: "+1 Police rating. Hab limits increased by 2.",                        requiresTech: "planetary_economics" },
+  { key: "sp_longevity_vaccine",      name: "The Longevity Vaccine",       category: "project", cost: 200,  description: "+50% economy at every base. -2 drones.",                              requiresTech: "bio_engineering" },
+  { key: "sp_hunters_seeker",         name: "The Hunter-Seeker Algorithm", category: "project", cost: 200,  description: "Immune to all probe team actions.",                                   requiresTech: "pre_sentient_algorithms" },
+  { key: "sp_pholus_mutagen",         name: "The Pholus Mutagen",          category: "project", cost: 200,  description: "+1 lifecycle bonus per fungus square. Fungus production +1.",         requiresTech: "centauri_genetics" },
+  { key: "sp_cyborg_factory",         name: "The Cyborg Factory",          category: "project", cost: 300,  description: "Free Bioenhancement Center at every base. +2 morale all units.",      requiresTech: "mind_machine_interface" },
+  { key: "sp_theory_everything",      name: "The Theory of Everything",    category: "project", cost: 300,  description: "+100% labs at this base. Free tech every 10 turns.",                  requiresTech: "unified_field_theory" },
+  { key: "sp_dream_twister",          name: "The Dream Twister",           category: "project", cost: 300,  description: "+50% psi attack for all units.",                                      requiresTech: "centauri_psi" },
+  { key: "sp_voice_planet",           name: "The Voice of Planet",         category: "project", cost: 400,  description: "Begin Ascent to Transcendence. Mindworms may join your faction.",     requiresTech: "threshold_transcendence" },
+  { key: "sp_network_backbone",       name: "The Network Backbone",        category: "project", cost: 300,  description: "+1 labs per citizen at every base. +5 research per turn.",            requiresTech: "digital_sentience" },
+  { key: "sp_planetary_datalinks",    name: "The Planetary Datalinks",     category: "project", cost: 200,  description: "Automatically gain any tech discovered by 3+ other factions.",        requiresTech: "cyberethics" },
+  { key: "sp_maritime_control",       name: "The Maritime Control Center",  category: "project", cost: 200,  description: "+2 moves for all naval units. Free Naval Yard at every base.",       requiresTech: "doctrine_initiative" },
+  { key: "sp_nano_factory",           name: "The Nano Factory",            category: "project", cost: 300,  description: "Units repaired fully each turn. -50% upgrade costs.",                 requiresTech: "industrial_nanorobotics" },
 ];
 
 export function getBuildItem(key: string): BuildItem | undefined {
@@ -76,7 +109,7 @@ export function getBuildItem(key: string): BuildItem | undefined {
 }
 
 // Items available for a base to build (check tech + already-built)
-export function getAvailableBuilds(base: Base, discoveredTechs: string[]): BuildItem[] {
+export function getAvailableBuilds(base: Base, discoveredTechs: string[], completedProjects?: Map<string, { owner: number; baseId: string }>): BuildItem[] {
   const techSet = new Set(discoveredTechs);
   return BUILD_CATALOG.filter(item => {
     // Check tech prerequisite
@@ -87,6 +120,8 @@ export function getAvailableBuilds(base: Base, discoveredTechs: string[]): Build
     if (item.category === "unit") return true;
     // Can't build a facility you already have
     if (item.category === "facility" && base.facilities.includes(item.key)) return false;
+    // Secret projects: only one per planet
+    if (item.category === "project" && completedProjects?.has(item.key)) return false;
     return true;
   });
 }
@@ -110,15 +145,6 @@ export interface Base {
 }
 
 // ─── Unit ────────────────────────────────────────────────────
-
-export enum UnitType {
-  Colony = "colony",
-  Former = "former",
-  Scout = "scout",
-  Infantry = "infantry",
-  Speeder = "speeder",
-  Mindworm = "mindworm",
-}
 
 export interface Unit {
   id: string;
@@ -177,6 +203,8 @@ export interface GameState {
   explored: Map<number, Set<string>>;
   // Current turn visibility (recalculated each turn): Set of hexKeys currently visible
   visible: Set<string>;
+  // Secret Projects completed: projectKey -> { owner: factionIndex, baseId }
+  completedProjects: Map<string, { owner: number; baseId: string }>;
 }
 
 // ─── Faction Definitions ─────────────────────────────────────
@@ -421,6 +449,7 @@ export function initializeGame(
     log: ["Year 2100. Planetfall. The Unity has been lost. You must survive."],
     explored,
     visible: new Set(),
+    completedProjects: new Map(),
   };
 
   // Calculate initial visibility for all factions
@@ -639,31 +668,59 @@ function resolveCombat(state: GameState, attackerId: string, defenderId: string)
   const newUnits = new Map(state.units);
   const log = [...state.log];
 
-  // Simple combat resolution
-  const atkRoll = attacker.attack * (attacker.health / attacker.maxHealth) * (0.5 + Math.random());
-  const defRoll = defender.defense * (defender.health / defender.maxHealth) * (0.5 + Math.random());
+  // Use the detailed combat system
+  const report = resolveCombatDetailed(state, attacker, defender);
 
-  if (atkRoll > defRoll) {
-    // Attacker wins
+  // Build combat log with modifiers
+  const atkName = attacker.type;
+  const defName = defender.type;
+  const modStr = report.defenderModifiers.length > 0
+    ? ` [${report.defenderModifiers.map(m => m.name).join(", ")}]`
+    : "";
+
+  if (report.attackerWins) {
+    // Attacker wins — moves to defender's tile, defender destroyed
     newUnits.delete(defenderId);
-    const dmg = Math.ceil(defRoll * 2);
     newUnits.set(attackerId, {
       ...attacker,
       q: defender.q,
       r: defender.r,
       movesLeft: 0,
-      health: Math.max(1, attacker.health - dmg),
+      health: Math.max(1, attacker.health - report.attackerDamage),
     });
-    log.push(`Combat: Your ${attacker.type} defeated enemy ${defender.type}!`);
+    log.push(`Combat: ${atkName} (${Math.round(report.attackerEffective * 10) / 10}) defeated ${defName} (${Math.round(report.defenderEffective * 10) / 10}) in ${report.rounds} rounds${modStr}`);
+
+    // If defender was in a base and attacker captures it
+    const defBaseEntry = Array.from(state.bases.entries()).find(([, b]) => b.q === defender.q && b.r === defender.r);
+    if (defBaseEntry && defBaseEntry[1].owner !== attacker.owner) {
+      const [baseId, base] = defBaseEntry;
+      // Check if any other enemy units still in the base
+      const otherDefenders = Array.from(newUnits.values()).filter(
+        u => u.q === base.q && u.r === base.r && u.owner === base.owner && u.id !== defenderId
+      );
+      if (otherDefenders.length === 0) {
+        // Capture the base!
+        const newBases = new Map(state.bases);
+        newBases.set(baseId, { ...base, owner: attacker.owner });
+        // Update tile ownership
+        const newTiles = new Map(state.map.tiles);
+        const baseKey = hexKey(base.q, base.r);
+        const baseTile = newTiles.get(baseKey);
+        if (baseTile) {
+          newTiles.set(baseKey, { ...baseTile, owner: attacker.owner });
+        }
+        log.push(`${base.name} has been captured!`);
+        return { ...state, units: newUnits, bases: newBases, map: { ...state.map, tiles: newTiles }, log };
+      }
+    }
   } else {
-    // Defender wins
+    // Defender wins — attacker destroyed
     newUnits.delete(attackerId);
-    const dmg = Math.ceil(atkRoll * 2);
     newUnits.set(defenderId, {
       ...defender,
-      health: Math.max(1, defender.health - dmg),
+      health: Math.max(1, defender.health - report.defenderDamage),
     });
-    log.push(`Combat: Your ${attacker.type} was destroyed by enemy ${defender.type}.`);
+    log.push(`Combat: ${atkName} (${Math.round(report.attackerEffective * 10) / 10}) destroyed by ${defName} (${Math.round(report.defenderEffective * 10) / 10}) in ${report.rounds} rounds${modStr}`);
   }
 
   return { ...state, units: newUnits, log };
@@ -950,6 +1007,19 @@ export function endTurn(state: GameState): GameState {
           const newUnit = createUnit(item.unitType, base.q, base.r, base.owner);
           newUnits.set(newUnit.id, newUnit);
           log.push(`${base.name}: ${item.name} completed!`);
+        } else if (item.category === "project") {
+          // Secret Project completed!
+          if (!newState.completedProjects) {
+            newState.completedProjects = new Map();
+          }
+          const cp = new Map(newState.completedProjects);
+          cp.set(item.key, { owner: base.owner, baseId: id });
+          newState = { ...newState, completedProjects: cp };
+          // Also add to base facilities for local effects
+          if (!newFacilities.includes(item.key)) {
+            newFacilities.push(item.key);
+          }
+          log.push(`*** ${base.name} completes SECRET PROJECT: ${item.name}! ***`);
         } else if (item.category === "facility") {
           // Add facility to base
           if (!newFacilities.includes(item.key)) {

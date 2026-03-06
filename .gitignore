@@ -1,3 +1,13 @@
 /node_modules
 /public/voices
 /public/fx
+/src-tauri
+/dist/voices
+/dist/fx
+/.vite/deps
+/src
+/src
+/src/game
+/src
+/src/audio
+/src

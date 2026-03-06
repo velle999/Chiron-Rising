@@ -61,7 +61,7 @@ export function ProductionPrompt({ gameState, baseId, baseName, completedItem, o
   const faction = gameState.factions[gameState.currentFaction];
   if (!base || !faction) return null;
 
-  const available = getAvailableBuilds(base, faction.discoveredTechs);
+  const available = getAvailableBuilds(base, faction.discoveredTechs, gameState.completedProjects);
 
   // Group by category
   const units = available.filter(b => b.category === "unit");
