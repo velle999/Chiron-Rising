@@ -9,15 +9,17 @@ import { FACTION_DEFS } from "../game/gameState";
 import { queryLLM, DEFAULT_LLM_CONFIG, ChatMessage, LLMConfig, buildDiplomacyPrompt } from "../llm/llmClient";
 import { getFactionPersonality } from "../llm/factionPersonalities";
 import { UnitType } from "../game/gameState";
+import { getTreaty, getTreatyDisplayName, getTreatyColor, TreatyType } from "../game/diplomacy";
 
 interface DiplomacyScreenProps {
   gameState: GameState;
   targetFaction: FactionState;
   onClose: () => void;
+  onSetTreaty?: (factionId: number, treaty: TreatyType) => void;
   llmConfig?: LLMConfig;
 }
 
-export default function DiplomacyScreen({ gameState, targetFaction, onClose, llmConfig }: DiplomacyScreenProps) {
+export default function DiplomacyScreen({ gameState, targetFaction, onClose, onSetTreaty, llmConfig }: DiplomacyScreenProps) {
   const [messages, setMessages] = useState<Array<{ role: "player" | "leader" | "system"; text: string }>>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -158,6 +160,71 @@ export default function DiplomacyScreen({ gameState, targetFaction, onClose, llm
           </div>
           <button style={styles.closeBtn} onClick={onClose}>✕</button>
         </div>
+
+        {/* Treaty Status Bar */}
+        {(() => {
+          const currentTreaty = getTreaty(gameState, gameState.currentFaction, targetFaction.id);
+          const treatyColor = getTreatyColor(currentTreaty);
+          return (
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "6px 16px", borderBottom: "1px solid #1a2a44",
+              background: "#080c14",
+            }}>
+              <div style={{ fontSize: 11, color: treatyColor }}>
+                Status: {getTreatyDisplayName(currentTreaty)}
+              </div>
+              {onSetTreaty && (
+                <div style={{ display: "flex", gap: 4 }}>
+                  {currentTreaty !== "treaty" && currentTreaty !== "pact" && (
+                    <button
+                      style={{ ...styles.quickBtn, borderColor: "#44cc66", color: "#44cc66" }}
+                      onClick={() => {
+                        onSetTreaty(targetFaction.id, "treaty");
+                        setMessages(prev => [...prev, { role: "system", text: "Treaty of Friendship established." }]);
+                      }}
+                    >
+                      Propose Treaty
+                    </button>
+                  )}
+                  {currentTreaty === "treaty" && (
+                    <button
+                      style={{ ...styles.quickBtn, borderColor: "#4488dd", color: "#4488dd" }}
+                      onClick={() => {
+                        onSetTreaty(targetFaction.id, "pact");
+                        setMessages(prev => [...prev, { role: "system", text: "Pact of Brotherhood formed!" }]);
+                      }}
+                    >
+                      Propose Pact
+                    </button>
+                  )}
+                  {currentTreaty !== "vendetta" && currentTreaty !== "none" && (
+                    <button
+                      style={{ ...styles.quickBtn, borderColor: "#cc4444", color: "#cc4444" }}
+                      onClick={() => {
+                        onSetTreaty(targetFaction.id, "none");
+                        setMessages(prev => [...prev, { role: "system", text: "Treaty cancelled." }]);
+                      }}
+                    >
+                      Cancel Treaty
+                    </button>
+                  )}
+                  {currentTreaty !== "vendetta" && (
+                    <button
+                      style={{ ...styles.quickBtn, borderColor: "#cc4444", color: "#cc4444" }}
+                      onClick={() => {
+                        onSetTreaty(targetFaction.id, "vendetta");
+                        setMessages(prev => [...prev, { role: "system", text: "You have declared Vendetta!" }]);
+                      }}
+                    >
+                      Declare Vendetta
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Messages */}
         <div style={styles.messageArea} ref={scrollRef}>

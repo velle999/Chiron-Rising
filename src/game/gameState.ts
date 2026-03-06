@@ -22,6 +22,7 @@ import { processAutomatedUnits } from "./unitAutomation";
 import { processAITurn } from "./aiOpponent";
 import { resolveCombatDetailed } from "./combat";
 import { getProjectBonuses, healUnits, checkVictoryConditions, getFreeFacilities } from "./projectsAndVictory";
+import { checkTerritoryEntry, adjustRelation, atWar } from "./diplomacy";
 
 // ─── Resource Types ──────────────────────────────────────────
 
@@ -164,6 +165,8 @@ export interface Unit {
 
 // ─── Faction ─────────────────────────────────────────────────
 
+export type TreatyType = "none" | "truce" | "treaty" | "pact" | "vendetta";
+
 export interface FactionState {
   id: number;
   key: string;           // e.g. "GAIANS"
@@ -176,6 +179,7 @@ export interface FactionState {
   currentResearch: string | null;
   discoveredTechs: string[];
   relations: Map<number, number>; // faction id -> disposition (-100 to 100)
+  treaties: Map<number, TreatyType>; // faction id -> treaty status
   socialEngineering: SocialEngineering;
   knownFactions: Set<number>;   // faction IDs we've made contact with
 }
@@ -389,6 +393,7 @@ export function initializeGame(
       currentResearch: null,
       discoveredTechs: getFactionStartingTechs(def.key),
       relations: new Map(),
+      treaties: new Map(),
       socialEngineering: defaultSocialEngineering(),
       knownFactions: new Set<number>(),
     });
@@ -662,6 +667,21 @@ export function moveUnit(state: GameState, unitId: string, toQ: number, toR: num
   });
 
   let newState = { ...state, units: newUnits };
+
+  // Territory trespass check
+  if (targetTile.owner !== null && targetTile.owner !== unit.owner && targetTile.owner >= 0) {
+    const warning = checkTerritoryEntry(state, unit.owner, targetTile.owner);
+    if (warning) {
+      // Penalize relations for trespassing
+      newState = adjustRelation(newState, targetTile.owner, unit.owner, -3);
+      // First time entering this faction's territory — warn
+      const log = [...(newState.log || state.log)];
+      if (unit.owner === state.currentFaction) {
+        log.push(`WARNING: ${warning.message}`);
+      }
+      newState = { ...newState, log };
+    }
+  }
   
   // Recalculate visibility after move
   if (unit.owner === state.currentFaction) {

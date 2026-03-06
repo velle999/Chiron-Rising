@@ -10,6 +10,7 @@ import {
 } from "../game/socialEngineering";
 import { hexKey, MapTile, Terrain, Moisture } from "../game/hexMap";
 import { getCombatOdds } from "../game/combat";
+import { getTreaty, getTreatyDisplayName, getTreatyColor, TreatyType } from "../game/diplomacy";
 
 interface InfoPanelProps {
   gameState: GameState;
@@ -465,23 +466,30 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
                 </div>
               );
             }
-            return knownFactions.map(f => (
-              <button
-                key={f.id}
-                style={{
-                  ...styles.actionBtn,
-                  borderLeft: `3px solid ${f.color}`,
-                  fontSize: 11,
-                  padding: "3px 8px",
-                }}
-                onClick={() => onContactFaction(f.id)}
-              >
-                {f.leaderName}
-                <span style={{ color: "#556677", marginLeft: 4, fontSize: 10 }}>
-                  ({Array.from(bases.values()).filter(b => b.owner === f.id).length} bases)
-                </span>
-              </button>
-            ));
+            return knownFactions.map(f => {
+              const treaty = getTreaty(gameState, currentFaction, f.id);
+              const treatyColor = getTreatyColor(treaty);
+              return (
+                <button
+                  key={f.id}
+                  style={{
+                    ...styles.actionBtn,
+                    borderLeft: `3px solid ${f.color}`,
+                    fontSize: 11,
+                    padding: "3px 8px",
+                  }}
+                  onClick={() => onContactFaction(f.id)}
+                >
+                  <div>{f.leaderName}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9 }}>
+                    <span style={{ color: treatyColor }}>{getTreatyDisplayName(treaty)}</span>
+                    <span style={{ color: "#556677" }}>
+                      {Array.from(bases.values()).filter(b => b.owner === f.id).length} bases
+                    </span>
+                  </div>
+                </button>
+              );
+            });
           })()}
         </div>
       </div>

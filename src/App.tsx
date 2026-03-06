@@ -18,6 +18,7 @@ import { soundManager, playSoundsForLog } from "./audio/soundSystem";
 import { playTechVoice, playFacilityVoice, playFactionIntro, playOpeningNarration, TECH_VOICE_MAP } from "./audio/voiceSystem";
 import { saveGame, loadGame, autoSave, loadAutoSave, hasSave, hasAutoSave, exportSaveToFile, importSaveFromFile, getSaveInfo } from "./game/saveLoad";
 import { checkVictoryConditions } from "./game/projectsAndVictory";
+import { setTreaty, TreatyType } from "./game/diplomacy";
 
 // ─── Base Name Generator ─────────────────────────────────────
 
@@ -583,6 +584,14 @@ export default function App() {
           gameState={gameState}
           targetFaction={diplomacyTarget}
           onClose={() => setDiplomacyTarget(null)}
+          onSetTreaty={(factionId: number, treaty: TreatyType) => {
+            const newState = setTreaty(gameState, gameState.currentFaction, factionId, treaty);
+            const treatyName = treaty === "treaty" ? "Treaty of Friendship" : treaty === "pact" ? "Pact of Brotherhood" : treaty === "vendetta" ? "Vendetta" : "No Treaty";
+            setGameState({
+              ...newState,
+              log: [...newState.log, `Diplomatic status with ${gameState.factions[factionId]?.name}: ${treatyName}`],
+            });
+          }}
         />
       )}
       {/* Turn Prompts */}

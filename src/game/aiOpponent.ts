@@ -6,6 +6,7 @@
 import { GameState, Unit, UnitType, Base, getAvailableBuilds } from "./gameState";
 import { MapTile, Terrain, Moisture, hexKey, hexNeighbors, AxialCoord } from "./hexMap";
 import { FACTION_BONUSES, getAvailableChoices, SocialEngineering } from "./socialEngineering";
+import { isFriendly, atWar } from "./diplomacy";
 
 // ─── AI Base Names ───────────────────────────────────────────
 
@@ -79,7 +80,7 @@ export function processAITurn(state: GameState, factionId: number): AITurnResult
       // Move toward a good base location
       const target = findGoodBaseSpot(pod, newTiles, newBases, factionId, state.map.width, state.map.height);
       if (target) {
-        const moved = moveUnitToward(pod, target.q, target.r, newTiles, newUnits);
+        const moved = moveUnitToward(pod, target.q, target.r, newTiles, newUnits, state);
         if (moved) {
           newUnits.set(pod.id, moved);
         }
@@ -120,7 +121,7 @@ export function processAITurn(state: GameState, factionId: number): AITurnResult
 
     if (nearestEnemy && hexDist(unit.q, unit.r, nearestEnemy.q, nearestEnemy.r) <= 6) {
       // Move toward enemy
-      const moved = moveUnitToward(unit, nearestEnemy.q, nearestEnemy.r, newTiles, newUnits);
+      const moved = moveUnitToward(unit, nearestEnemy.q, nearestEnemy.r, newTiles, newUnits, state);
       if (moved) {
         newUnits.set(unit.id, moved);
       }
@@ -393,7 +394,8 @@ function moveUnitToward(
   unit: Unit,
   targetQ: number, targetR: number,
   tiles: Map<string, MapTile>,
-  units: Map<string, Unit>
+  units: Map<string, Unit>,
+  state?: GameState,
 ): Unit | null {
   if (unit.movesLeft <= 0) return null;
 
@@ -407,6 +409,12 @@ function moveUnitToward(
     // Don't step on other units
     for (const [, u] of units) {
       if (u.q === n.q && u.r === n.r && u.id !== unit.id) return false;
+    }
+    // Respect foreign territory unless at war or have treaty
+    if (state && tile.owner !== null && tile.owner >= 0 && tile.owner !== unit.owner) {
+      if (!isFriendly(state, unit.owner, tile.owner) && !atWar(state, unit.owner, tile.owner)) {
+        return false; // Don't trespass
+      }
     }
     return true;
   });
