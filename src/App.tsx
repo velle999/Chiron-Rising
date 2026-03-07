@@ -53,7 +53,6 @@ export default function App() {
   const [minimapCameraTarget, setMinimapCameraTarget] = useState<{x:number,y:number}|null>(null);
   const [victoryMessage, setVictoryMessage] = useState<string | null>(null);
   const [showUnitDesigner, setShowUnitDesigner] = useState(false);
-  const [processingTurn, setProcessingTurn] = useState(false);
   const prevLogLength = useRef(0);
   const audioInitialized = useRef(false);
 
@@ -201,15 +200,10 @@ export default function App() {
   }, [gameState]);
 
   const handleEndTurn = useCallback(() => {
-    if (!gameState || processingTurn) return;
-    setProcessingTurn(true);
-
-    // Use setTimeout to let the "Processing..." UI render before heavy computation
-    setTimeout(() => {
-      const oldLogLen = gameState.log.length;
-      const playerFaction = gameState.factions[gameState.currentFaction];
-      const newState = endTurn(gameState);
-      setGameState(newState);
+    if (!gameState) return;
+    const oldLogLen = gameState.log.length;
+    const playerFaction = gameState.factions[gameState.currentFaction];
+    let newState = endTurn(gameState);
 
     // Play sounds for new log entries
     playSoundsForLog(newState.log, oldLogLen);
@@ -218,12 +212,10 @@ export default function App() {
     // Check for voice-over triggers in new log entries (player faction only)
     const newEntries = newState.log.slice(oldLogLen);
     for (const entry of newEntries) {
-      // Tech discovery voice-over
       if (entry.includes("discovers") && playerFaction && entry.includes(playerFaction.name)) {
         const techMatch = entry.match(/discovers (.+)!/);
         if (techMatch) {
           const techName = techMatch[1].toLowerCase();
-          // Match tech name to voice map key
           for (const key of Object.keys(TECH_VOICE_MAP)) {
             const normalName = key.replace(/_/g, " ");
             if (techName === normalName || techName.startsWith(normalName.slice(0, 12))) {
@@ -233,38 +225,23 @@ export default function App() {
           }
         }
       }
-
-      // Facility completion voice-over
       if (entry.includes("completed!") && !entry.includes("discovers")) {
         const facMatch = entry.match(/: (.+) completed!/);
         if (facMatch) {
-          const itemName = facMatch[1];
-          // Try to match facility name to voice key
           const facilityKeys: Record<string, string> = {
-            "Recycling Tanks": "recycling_tanks",
-            "Network Node": "network_node",
-            "Energy Bank": "energy_bank",
-            "Perimeter Defense": "perimeter_defense",
-            "Recreation Commons": "recreation_commons",
-            "Children's Creche": "children_creche",
-            "Command Center": "command_center",
-            "Research Hospital": "research_hospital",
-            "Tree Farm": "tree_farm",
-            "Hab Complex": "hab_complex",
-            "Biology Lab": "biology_lab",
-            "Hologram Theatre": "hologram_theatre",
-            "Fusion Lab": "fusion_lab",
-            "Aerospace Complex": "aerospace_complex",
-            "Genejack Factory": "genejack_factory",
-            "Robotic Assembly Plant": "robotic_assembly",
-            "Pressure Dome": "pressure_dome",
-            "Centauri Preserve": "centauri_preserve",
+            "Recycling Tanks": "recycling_tanks", "Network Node": "network_node",
+            "Energy Bank": "energy_bank", "Perimeter Defense": "perimeter_defense",
+            "Recreation Commons": "recreation_commons", "Children's Creche": "children_creche",
+            "Command Center": "command_center", "Research Hospital": "research_hospital",
+            "Tree Farm": "tree_farm", "Hab Complex": "hab_complex",
+            "Biology Lab": "biology_lab", "Hologram Theatre": "hologram_theatre",
+            "Fusion Lab": "fusion_lab", "Aerospace Complex": "aerospace_complex",
+            "Genejack Factory": "genejack_factory", "Robotic Assembly Plant": "robotic_assembly",
+            "Pressure Dome": "pressure_dome", "Centauri Preserve": "centauri_preserve",
             "Skunkworks": "skunkworks",
           };
-          const facKey = facilityKeys[itemName];
-          if (facKey) {
-            playFacilityVoice(facKey);
-          }
+          const facKey = facilityKeys[facMatch[1]];
+          if (facKey) playFacilityVoice(facKey);
         }
       }
     }
@@ -294,15 +271,13 @@ export default function App() {
         .find(u => u.owner === newState.currentFaction && u.movesLeft > 0 && !u.orders);
       if (firstIdle) {
         newState = { ...newState, selectedUnit: firstIdle.id, selectedTile: hexKey(firstIdle.q, firstIdle.r) };
-        setGameState(newState);
         const pos = hexToPixel({ q: firstIdle.q, r: firstIdle.r }, 20);
         setMinimapCameraTarget({ x: pos.x, y: pos.y });
       }
     }
 
-      setProcessingTurn(false);
-    }, 50);
-  }, [gameState, processingTurn]);
+    setGameState(newState);
+  }, [gameState]);
 
   const handleChangeProduction = useCallback((baseId: string, buildKey: string) => {
     if (!gameState) return;
@@ -330,7 +305,7 @@ export default function App() {
     const handler = (e: KeyboardEvent) => {
       if (!gameState) return;
       // Block shortcuts when modals are open
-      if (turnPrompts.length > 0 || diplomacyTarget || showUnitDesigner || processingTurn) return;
+      if (turnPrompts.length > 0 || diplomacyTarget || showUnitDesigner) return;
 
       // Save/Load
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
@@ -451,7 +426,7 @@ export default function App() {
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [gameState, handleEndTurn, handleFoundBase, handleBuildImprovement, handleSetOrders, turnPrompts, diplomacyTarget, showUnitDesigner, processingTurn]);
+  }, [gameState, handleEndTurn, handleFoundBase, handleBuildImprovement, handleSetOrders, turnPrompts, diplomacyTarget, showUnitDesigner]);
 
   // ─── Setup Screen ──────────────────────────────────────
 
@@ -684,22 +659,6 @@ export default function App() {
           setGameState(setSpecialist(gameState, baseId, citizenIndex, specType as SpecialistType));
         }}
       />
-      {/* Processing Turn Overlay */}
-      {processingTurn && (
-        <div style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
-          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 800,
-          pointerEvents: "none",
-        }}>
-          <div style={{
-            fontFamily: "'Orbitron', sans-serif", fontSize: 14, color: "#88aacc",
-            letterSpacing: "0.2em", padding: "12px 24px",
-            background: "#0a0e18dd", border: "1px solid #1a2a44", borderRadius: 4,
-          }}>
-            PROCESSING TURN {gameState?.turn || ""}...
-          </div>
-        </div>
-      )}
       {/* Victory Screen */}
       {victoryMessage && (
         <div style={{

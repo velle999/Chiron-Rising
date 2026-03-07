@@ -1640,66 +1640,66 @@ export function endTurn(state: GameState): GameState {
   finalState = { ...finalState, visible: newVisible, explored: newExplored };
 
   // ── Faction Contact Detection ──
-  // Check if any faction can now see another faction's units or bases
+  // Use proximity-based detection instead of full visibility calc (much faster)
   const updatedFactions = [...finalState.factions];
   let contactMade = false;
 
+  // Build a lookup of unit/base positions per faction
+  const factionPositions = new Map<number, Set<string>>();
+  for (const [, unit] of finalState.units) {
+    if (unit.owner < 0) continue;
+    if (!factionPositions.has(unit.owner)) factionPositions.set(unit.owner, new Set());
+    factionPositions.get(unit.owner)!.add(hexKey(unit.q, unit.r));
+    // Also add adjacent tiles (vision range = 1 for contact)
+    for (const n of hexNeighbors({ q: unit.q, r: unit.r })) {
+      factionPositions.get(unit.owner)!.add(hexKey(n.q, n.r));
+    }
+  }
+  for (const [, base] of finalState.bases) {
+    if (!factionPositions.has(base.owner)) factionPositions.set(base.owner, new Set());
+    factionPositions.get(base.owner)!.add(hexKey(base.q, base.r));
+    for (const n of hexNeighbors({ q: base.q, r: base.r })) {
+      factionPositions.get(base.owner)!.add(hexKey(n.q, n.r));
+    }
+  }
+
+  // Check for overlapping presence between factions
   for (let fi = 0; fi < updatedFactions.length; fi++) {
     const faction = updatedFactions[fi];
-    const newKnown = new Set(faction.knownFactions || []);
+    const knownFactions = new Set(faction.knownFactions || []);
+    const myTiles = factionPositions.get(fi);
+    if (!myTiles) continue;
 
-    // Check all visible tiles for this faction's units — do they see other factions?
-    // For the human player, use the newVisible set
-    // For AI, calculate their visibility
-    const visibleSet = fi === state.currentFaction
-      ? newVisible
-      : calculateVisibility(finalState, fi);
+    for (let fj = fi + 1; fj < updatedFactions.length; fj++) {
+      if (knownFactions.has(fj)) continue; // Already known
+      const otherTiles = factionPositions.get(fj);
+      if (!otherTiles) continue;
 
-    // Check units on visible tiles
-    for (const [, unit] of finalState.units) {
-      if (unit.owner === fi || unit.owner < 0) continue;
-      const uKey = hexKey(unit.q, unit.r);
-      if (visibleSet.has(uKey) && !newKnown.has(unit.owner)) {
-        newKnown.add(unit.owner);
+      // Check if any tiles overlap (one faction can see the other)
+      let overlap = false;
+      for (const key of myTiles) {
+        if (otherTiles.has(key)) { overlap = true; break; }
+      }
+
+      if (overlap) {
         // Mutual contact
-        const otherKnown = new Set(updatedFactions[unit.owner].knownFactions || []);
-        if (!otherKnown.has(fi)) {
-          otherKnown.add(fi);
-          updatedFactions[unit.owner] = { ...updatedFactions[unit.owner], knownFactions: otherKnown };
-        }
+        knownFactions.add(fj);
+        const otherKnown = new Set(updatedFactions[fj].knownFactions || []);
+        otherKnown.add(fi);
+        updatedFactions[fj] = { ...updatedFactions[fj], knownFactions: otherKnown };
+
         if (fi === state.currentFaction) {
-          finalState.log = [...finalState.log, `Contact established with ${updatedFactions[unit.owner].name}!`];
+          finalState.log = [...finalState.log, `Contact established with ${updatedFactions[fj].name}!`];
           contactMade = true;
-        } else if (unit.owner === state.currentFaction) {
+        } else if (fj === state.currentFaction) {
           finalState.log = [...finalState.log, `${faction.name} has made contact with us!`];
           contactMade = true;
         }
       }
     }
 
-    // Check bases on visible tiles
-    for (const [, base] of finalState.bases) {
-      if (base.owner === fi) continue;
-      const bKey = hexKey(base.q, base.r);
-      if (visibleSet.has(bKey) && !newKnown.has(base.owner)) {
-        newKnown.add(base.owner);
-        const otherKnown = new Set(updatedFactions[base.owner].knownFactions || []);
-        if (!otherKnown.has(fi)) {
-          otherKnown.add(fi);
-          updatedFactions[base.owner] = { ...updatedFactions[base.owner], knownFactions: otherKnown };
-        }
-        if (fi === state.currentFaction) {
-          finalState.log = [...finalState.log, `Contact established with ${updatedFactions[base.owner].name}!`];
-          contactMade = true;
-        } else if (base.owner === state.currentFaction) {
-          finalState.log = [...finalState.log, `${faction.name} has made contact with us!`];
-          contactMade = true;
-        }
-      }
-    }
-
-    if (newKnown.size !== (faction.knownFactions?.size || 0)) {
-      updatedFactions[fi] = { ...updatedFactions[fi], knownFactions: newKnown };
+    if (knownFactions.size !== (faction.knownFactions?.size || 0)) {
+      updatedFactions[fi] = { ...updatedFactions[fi], knownFactions: knownFactions };
     }
   }
 
