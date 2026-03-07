@@ -9,6 +9,7 @@ import DiplomacyScreen from "./components/DiplomacyScreen";
 import Minimap from "./components/Minimap";
 import { ProductionPrompt, ResearchPrompt, getTurnPrompts, TurnPrompt } from "./components/TurnPrompts";
 import { hexKey, hexToPixel } from "./game/hexMap";
+import { getTech } from "./game/techTree";
 import {
   GameState, initializeGame, moveUnit, foundBase, endTurn,
   changeProduction, chooseResearch, changeSocialEngineering,
@@ -518,6 +519,27 @@ export default function App() {
             {" · M.Y. "}{gameState.year}
             {" · Turn "}{gameState.turn}
           </span>
+          {/* Research + Energy status */}
+          {(() => {
+            const faction = gameState.factions[gameState.currentFaction];
+            if (!faction) return null;
+            const tech = faction.currentResearch ? getTech(faction.currentResearch) : null;
+            const pct = tech ? Math.min(100, Math.round((faction.techProgress / tech.cost) * 100)) : 0;
+            const numBases = Array.from(gameState.bases.values()).filter(b => b.owner === gameState.currentFaction).length;
+            const numUnits = Array.from(gameState.units.values()).filter(u => u.owner === gameState.currentFaction).length;
+            return (
+              <div style={{ display: "flex", gap: 10, fontSize: 10, color: "#556677", pointerEvents: "none", marginLeft: 8 }}>
+                <span style={{ color: "#ffcc44" }}>⚡{faction.energy}</span>
+                <span style={{ color: "#88aacc" }}>🏠{numBases}</span>
+                <span style={{ color: "#44cc66" }}>⚔{numUnits}</span>
+                {tech && (
+                  <span style={{ color: "#4488dd" }}>
+                    🔬{tech.name.slice(0, 15)}{tech.name.length > 15 ? "…" : ""} {pct}%
+                  </span>
+                )}
+              </div>
+            );
+          })()}
           <div style={{ display: "flex", gap: 4, marginLeft: 8, pointerEvents: "auto" }}>
             <button
               style={gameStyles.topBarBtn}
@@ -571,6 +593,29 @@ export default function App() {
           >
             {soundEnabled ? "🔊" : "🔇"}
           </button>
+        </div>
+        {/* Bottom hint bar */}
+        <div style={{
+          position: "absolute", bottom: 0, left: 0, right: 0,
+          background: "linear-gradient(0deg, #0a0e18dd 0%, transparent 100%)",
+          padding: "12px 16px 6px",
+          display: "flex", gap: 12, justifyContent: "center",
+          pointerEvents: "none", fontFamily: "'Share Tech Mono', monospace",
+          fontSize: 10, color: "#445566",
+        }}>
+          {(() => {
+            const unit = gameState.selectedUnit ? gameState.units.get(gameState.selectedUnit) : null;
+            if (!unit || unit.owner !== gameState.currentFaction) {
+              return <span>Tab:next unit · Enter:end turn · Click:select · Scroll:zoom · W:workshop · D:diplomacy</span>;
+            }
+            if (unit.type === UnitType.Colony) {
+              return <span>B:found base · Tab:next unit · Enter:end turn · Arrow/Numpad:move</span>;
+            }
+            if (unit.type === UnitType.Former || unit.type === UnitType.SeaFormer) {
+              return <span>F:farm · M:mine · S:solar · P:forest · R:road · A:auto · Tab:next · Enter:end turn</span>;
+            }
+            return <span>A:auto · L:sentry · H:hold · Shift+F:fortify · Tab:next · Space:center · Enter:end turn</span>;
+          })()}
         </div>
       </div>
       <InfoPanel

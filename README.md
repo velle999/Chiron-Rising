@@ -188,6 +188,7 @@ chiron-rising/
 | 14 | Supply pods (exploration rewards), AI diplomacy, resource display, production ETA |
 
 | 15 | Naval units (Foil, Cruiser, Transport, Sea Former), specialists (Doctor/Engineer/Librarian/Empath/Transcendi), sea improvements |
+| 16 | UI polish: color-coded log, top bar status (research/energy/bases/units), context-sensitive keyboard hints |
 
 ## Roadmap
 

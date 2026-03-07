@@ -347,7 +347,7 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
                 <div id={"prod-picker-" + baseAtTile.id} style={{ display: "none", marginTop: 6 }}>
                   <div style={{ color: "#667788", fontSize: 10, marginBottom: 4 }}>SELECT BUILD ORDER:</div>
                   <div style={{ maxHeight: 200, overflowY: "auto" }}>
-                    {getAvailableBuilds(baseAtTile, playerFaction?.discoveredTechs || [], gameState.completedProjects, gameState.customDesigns).map(item => (
+                    {getAvailableBuilds(baseAtTile, playerFaction?.discoveredTechs || [], gameState.completedProjects, gameState.customDesigns, gameState.bases).map(item => (
                       <button
                         key={item.key}
                         style={{
@@ -652,11 +652,30 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
       <div style={{ ...styles.section, flex: 1, overflow: "hidden" }}>
         <div style={styles.sectionTitle}>PLANETARY LOG</div>
         <div style={styles.log}>
-          {[...log].reverse().slice(0, 12).map((entry, i) => (
-            <div key={i} style={{ ...styles.logEntry, opacity: 1 - i * 0.06 }}>
-              {entry}
-            </div>
-          ))}
+          {[...log].reverse().slice(0, 15).map((entry, i) => {
+            // Color-code log entries
+            let color = "#556677";
+            if (entry.includes("***")) color = "#ffcc44";
+            else if (entry.includes("discovers")) color = "#4488dd";
+            else if (entry.includes("completed!")) color = "#44cc66";
+            else if (entry.includes("Combat:")) color = "#cc6644";
+            else if (entry.includes("WARNING")) color = "#cc4444";
+            else if (entry.includes("Contact")) color = "#88aacc";
+            else if (entry.includes("Supply pod")) color = "#66ccff";
+            else if (entry.includes("Vendetta")) color = "#cc2244";
+            else if (entry.includes("Treaty") || entry.includes("Pact")) color = "#44cc66";
+            else if (entry.includes("Drone riots")) color = "#cc4444";
+            else if (entry.includes("Golden Age")) color = "#ffcc44";
+            else if (entry.includes("founded")) color = "#88aacc";
+            else if (entry.includes("grown")) color = "#44aa66";
+            else if (entry.includes("Starvation")) color = "#cc6644";
+            else if (entry.includes("saved")) color = "#448866";
+            return (
+              <div key={i} style={{ ...styles.logEntry, color, opacity: 1 - i * 0.05 }}>
+                {entry}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

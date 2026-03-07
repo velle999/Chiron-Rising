@@ -144,8 +144,31 @@ export function getBuildItem(key: string): BuildItem | undefined {
 }
 
 // Items available for a base to build (check tech + already-built)
-export function getAvailableBuilds(base: Base, discoveredTechs: string[], completedProjects?: Map<string, { owner: number; baseId: string }>, customDesigns?: UnitDesign[]): BuildItem[] {
+export function getAvailableBuilds(
+  base: Base,
+  discoveredTechs: string[],
+  completedProjects?: Map<string, { owner: number; baseId: string }>,
+  customDesigns?: UnitDesign[],
+  allBases?: Map<string, Base>,
+): BuildItem[] {
   const techSet = new Set(discoveredTechs);
+
+  // Collect projects already being built by ANY base of this faction
+  const projectsInProgress = new Set<string>();
+  if (allBases) {
+    for (const [bid, b] of allBases) {
+      if (b.owner === base.owner && bid !== base.id && b.currentBuild?.startsWith("sp_")) {
+        projectsInProgress.add(b.currentBuild);
+      }
+      // Also check production queues
+      for (const queued of b.productionQueue) {
+        if (b.owner === base.owner && bid !== base.id && queued.startsWith("sp_")) {
+          projectsInProgress.add(queued);
+        }
+      }
+    }
+  }
+
   const items = BUILD_CATALOG.filter(item => {
     // Check tech prerequisite
     if (item.requiresTech && !techSet.has(item.requiresTech)) return false;
@@ -155,8 +178,10 @@ export function getAvailableBuilds(base: Base, discoveredTechs: string[], comple
     if (item.category === "unit") return true;
     // Can't build a facility you already have
     if (item.category === "facility" && base.facilities.includes(item.key)) return false;
-    // Secret projects: only one per planet
+    // Secret projects: only one per planet (completed)
     if (item.category === "project" && completedProjects?.has(item.key)) return false;
+    // Secret projects: only one base at a time per faction (in progress)
+    if (item.category === "project" && projectsInProgress.has(item.key)) return false;
     return true;
   });
 

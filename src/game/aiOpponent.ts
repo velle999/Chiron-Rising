@@ -10,19 +10,60 @@ import { isFriendly, atWar } from "./diplomacy";
 
 // ─── AI Base Names ───────────────────────────────────────────
 
-const AI_BASE_NAMES = [
-  "New Settlement", "Outpost Alpha", "Forward Base", "Colony Prime",
-  "Settlement Beta", "Bastion", "Frontier Post", "Citadel",
-  "Stronghold", "Nexus", "Hub", "Enclave", "Depot",
-  "Vanguard Post", "Staging Ground", "Watchtower", "Haven",
-  "Refuge", "Command Post", "Territory Mark",
-];
-let aiBaseNameIdx = 0;
+const FACTION_BASE_NAMES: Record<string, string[]> = {
+  GAIANS: [
+    "Gaia's Landing", "Forest Primeval", "Greenhouse Gate", "Razorbeak Wood",
+    "Mindworm Pass", "Dream Garden", "Song of Planet", "Vale of Winds",
+    "Silverbird Park", "Nessus Shining", "The Manifold Nexus", "Lily of the Valley",
+    "Autumn Grove", "Velvetgrass Point", "Fallow Time", "Last Rose of Summer",
+  ],
+  HIVE: [
+    "The Hive", "The Labyrinth", "Seat of Proper Thought", "The Iron Fist",
+    "Worker's Paradise", "Great Collective", "The People's Hive", "Industrial Sector",
+    "Yang Mine", "Fecundity Tower", "People's Senate", "Hall of Industry",
+    "Social Engineering Lab", "Discipline Nexus", "Communal Nexus", "The Living Hive",
+  ],
+  UNIV: [
+    "University Base", "Academy Park", "Baikonur", "Lab Three",
+    "Budushaya", "Cosmograd", "Zarya Landing", "Lomonosov Park",
+    "Pavlov Biolab", "Korolev Center", "Mendeleyev Labs", "Gagarin Memorial",
+    "Library of Planet", "Quantum Lab", "Planck Institute", "Turing Nexus",
+  ],
+  MORGAN: [
+    "Morgan Industries", "Morgan Bank", "Morgan Mines", "Morgan Energy Trust",
+    "Morganlink", "Morgan Metagenics", "Morgan Robotics", "Morgan Antimatter",
+    "Morgan Gravitonics", "Morgan Sealand", "Morgan Trade Center", "Morgan Aeronautics",
+    "Morgan Biochemical", "Morgan Hydroponics", "Morgan Interstellar", "Profit Center",
+  ],
+  SPARTANS: [
+    "Sparta Command", "Fort Legion", "Bunker 118", "War Outpost",
+    "Ironholm", "Blast Rifle Crag", "Centurion Cave", "Fort Superiority",
+    "Training Camp", "Survival Base", "Steel Citadel", "Janissary Rock",
+    "Phalanx Base", "Sniper's Nest", "Fort Liberty", "Hawk of Chiron",
+  ],
+  BELIEVE: [
+    "New Jerusalem", "Great Conclave", "Terrible Swift Sword", "Godwinson's Hope",
+    "Cathedral of Planet", "Redemption Base", "Divinity Base", "Faith Landing",
+    "Sanctity Base", "Garden of the Lord", "Righteous Might", "Holy Flame",
+    "Throne of God", "Zion", "Pilgrim's Landing", "The Lord's Gift",
+  ],
+  PEACE: [
+    "UN Headquarters", "UN Haven", "Amnesty Town", "Lal's Conscience",
+    "U.N. Aid Station", "Human Rights", "Tribunal Commons", "Freedom's Gate",
+    "Refuge of the Weary", "Peacekeeping Nexus", "Council Station", "Charter Landing",
+    "Geneva Station", "Equality Village", "New Geneva", "Mandate Base",
+  ],
+};
 
-function getAIBaseName(factionName: string): string {
-  const name = `${factionName} ${AI_BASE_NAMES[aiBaseNameIdx % AI_BASE_NAMES.length]}`;
-  aiBaseNameIdx++;
-  return name;
+// Track per-faction name index
+const factionNameIdx: Record<string, number> = {};
+
+function getAIBaseName(factionKey: string): string {
+  const names = FACTION_BASE_NAMES[factionKey] || FACTION_BASE_NAMES.PEACE;
+  if (!(factionKey in factionNameIdx)) factionNameIdx[factionKey] = 0;
+  const idx = factionNameIdx[factionKey] % names.length;
+  factionNameIdx[factionKey]++;
+  return names[idx];
 }
 
 // ─── Utility: hex distance ───────────────────────────────────
@@ -71,7 +112,7 @@ export function processAITurn(state: GameState, factionId: number): AITurnResult
     // Check if current location is good for a base
     if (currentTile && !currentTile.baseId && isGoodBaseLocation(pod.q, pod.r, newTiles, newBases, factionId, state.map.width, state.map.height)) {
       // Found base here
-      const baseName = getAIBaseName(faction.name.split(" ").pop() || "AI");
+      const baseName = getAIBaseName(faction.key);
       const result = foundBaseInternal(newUnits, newBases, newTiles, pod.id, baseName, factionId);
       if (result) {
         log.push(`${faction.name} founds ${baseName}!`);
@@ -274,7 +315,7 @@ function chooseAIProduction(
   faction: any,
   state: GameState
 ): string | null {
-  const available = getAvailableBuilds(base, faction.discoveredTechs, state.completedProjects);
+  const available = getAvailableBuilds(base, faction.discoveredTechs, state.completedProjects, undefined, state.bases);
   if (available.length === 0) return "unit_scout";
 
   // Count our units and bases
