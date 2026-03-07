@@ -197,10 +197,25 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
         <div style={styles.section}>
           <div style={styles.sectionTitle}>BASE</div>
           <div style={styles.baseName}>{baseAtTile.name}</div>
-          <div style={styles.dim}>
-            Pop: {baseAtTile.population} ·
-            Food: {baseAtTile.storedNutrients}
-          </div>
+          {/* Resource production summary */}
+          {(() => {
+            let totalN = 0, totalM = 0, totalE = 0;
+            for (const tk of baseAtTile.workedTiles) {
+              const tt = gameState.map.tiles.get(tk);
+              if (tt) { const res = getTileResources(tt); totalN += res.nutrients; totalM += res.minerals; totalE += res.energy; }
+            }
+            totalN += 2; totalM += 1; totalE += 2; // base square
+            const consumed = baseAtTile.population * 2;
+            const surplus = totalN - consumed;
+            return (
+              <div style={{ fontSize: 11, display: "flex", gap: 8, marginBottom: 2 }}>
+                <span style={{ color: "#44cc66" }}>🌿{totalN}<span style={{ color: "#557755", fontSize: 9 }}>({surplus >= 0 ? "+" : ""}{surplus})</span></span>
+                <span style={{ color: "#cc8844" }}>⛏{totalM}</span>
+                <span style={{ color: "#ffcc44" }}>⚡{totalE}</span>
+                <span style={{ color: "#8899aa" }}>Pop:{baseAtTile.population}</span>
+              </div>
+            );
+          })()}
           {/* Drone/Golden Age status */}
           {(() => {
             const pop = baseAtTile.population;
@@ -214,20 +229,39 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
             const isGoldenAge = talents >= pop && pop >= 3 && drones === 0;
             if (isDroneRiot) return <div style={{ color: "#cc4444", fontSize: 11, fontWeight: 700 }}>⚠ DRONE RIOTS — Production halted</div>;
             if (isGoldenAge) return <div style={{ color: "#ffcc44", fontSize: 11, fontWeight: 700 }}>★ GOLDEN AGE — Double growth</div>;
-            if (drones > 0) return <div style={{ color: "#cc884488", fontSize: 10 }}>Drones: {drones} · Talents: {talents}</div>;
+            if (drones > 0) return <div style={{ color: "#aa775588", fontSize: 10 }}>Drones: {drones} · Talents: {talents}</div>;
             return null;
           })()}
-          <div style={styles.dim}>
-            Facilities: {baseAtTile.facilities.join(", ") || "none"}
+          <div style={{ ...styles.dim, fontSize: 10 }}>
+            Facilities: {baseAtTile.facilities.filter(f => !f.startsWith("sp_")).join(", ") || "none"}
           </div>
 
           {/* Current Production */}
           {baseAtTile.owner === currentFaction && (() => {
             const buildItem = baseAtTile.currentBuild ? getBuildItem(baseAtTile.currentBuild) : null;
-            const cost = buildItem?.cost || 0;
+            // Also check custom designs
+            let displayItem = buildItem;
+            let displayCost = buildItem?.cost || 0;
+            if (!displayItem && baseAtTile.currentBuild?.startsWith("custom_")) {
+              const designs = gameState.customDesigns || [];
+              const idx = parseInt(baseAtTile.currentBuild.split("_").pop() || "0") - 1;
+              const design = designs[idx];
+              if (design) {
+                const stats = getTileResources(gameState.map.tiles.values().next().value); // dummy
+                displayItem = { key: baseAtTile.currentBuild, name: design.name, category: "unit", cost: 0, description: "" };
+              }
+            }
+            const cost = displayCost;
             const progress = baseAtTile.buildProgress;
             const pct = cost > 0 ? Math.min(1, progress / cost) : 0;
-            const turnsLeft = cost > 0 ? Math.max(1, Math.ceil((cost - progress) / Math.max(1, 1))) : 0; // rough estimate
+            // Calculate minerals per turn for ETA
+            let mineralsPerTurn = 0;
+            for (const tk of baseAtTile.workedTiles) {
+              const tt = gameState.map.tiles.get(tk);
+              if (tt) mineralsPerTurn += getTileResources(tt).minerals;
+            }
+            mineralsPerTurn += 1; // base square
+            const turnsLeft = cost > 0 && mineralsPerTurn > 0 ? Math.max(1, Math.ceil((cost - progress) / mineralsPerTurn)) : 0;
 
             return (
               <div style={{ marginTop: 8 }}>
@@ -268,7 +302,7 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
                 <div id={"prod-picker-" + baseAtTile.id} style={{ display: "none", marginTop: 6 }}>
                   <div style={{ color: "#667788", fontSize: 10, marginBottom: 4 }}>SELECT BUILD ORDER:</div>
                   <div style={{ maxHeight: 200, overflowY: "auto" }}>
-                    {getAvailableBuilds(baseAtTile, playerFaction?.discoveredTechs || [], gameState.completedProjects).map(item => (
+                    {getAvailableBuilds(baseAtTile, playerFaction?.discoveredTechs || [], gameState.completedProjects, gameState.customDesigns).map(item => (
                       <button
                         key={item.key}
                         style={{

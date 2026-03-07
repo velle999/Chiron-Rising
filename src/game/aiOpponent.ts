@@ -153,6 +153,42 @@ export function processAITurn(state: GameState, factionId: number): AITurnResult
     );
   }
 
+  // ── 7. AI Diplomacy: Propose treaties or declare war ──
+  if (state.turn % 10 === 0 && faction.knownFactions) {
+    for (const otherFactionId of faction.knownFactions) {
+      if (otherFactionId === factionId) continue;
+      const currentTreaty = faction.treaties?.get(otherFactionId) || "none";
+      const relations = faction.relations?.get(otherFactionId) || 0;
+
+      // If relations are bad enough, declare vendetta
+      if (relations <= -50 && currentTreaty !== "vendetta") {
+        const otherFaction = newFactions[otherFactionId];
+        if (otherFaction) {
+          const newTreaties1 = new Map(faction.treaties || new Map());
+          newTreaties1.set(otherFactionId, "vendetta");
+          const newTreaties2 = new Map(otherFaction.treaties || new Map());
+          newTreaties2.set(factionId, "vendetta");
+          newFactions[factionId] = { ...newFactions[factionId], treaties: newTreaties1 };
+          newFactions[otherFactionId] = { ...newFactions[otherFactionId], treaties: newTreaties2 };
+          log.push(`${faction.name} declares Vendetta on ${otherFaction.name}!`);
+        }
+      }
+      // If relations are good, propose treaty
+      else if (relations >= 20 && currentTreaty === "none") {
+        const otherFaction = newFactions[otherFactionId];
+        if (otherFaction) {
+          const newTreaties1 = new Map(faction.treaties || new Map());
+          newTreaties1.set(otherFactionId, "treaty");
+          const newTreaties2 = new Map(otherFaction.treaties || new Map());
+          newTreaties2.set(factionId, "treaty");
+          newFactions[factionId] = { ...newFactions[factionId], treaties: newTreaties1 };
+          newFactions[otherFactionId] = { ...newFactions[otherFactionId], treaties: newTreaties2 };
+          log.push(`${faction.name} proposes Treaty of Friendship with ${otherFaction.name}.`);
+        }
+      }
+    }
+  }
+
   return { units: newUnits, bases: newBases, tiles: newTiles, factions: newFactions, log };
 }
 

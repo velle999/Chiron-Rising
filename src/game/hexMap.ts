@@ -122,6 +122,7 @@ export interface MapTile {
   improvement: string | null;
   owner: number | null;  // faction index
   baseId: string | null;
+  supplyPod: boolean;    // Unity supply pod (exploration reward)
 }
 
 // ─── Noise Generator (Simplex-like) ─────────────────────────
@@ -337,6 +338,7 @@ export function generateMap(config: MapConfig = DEFAULT_MAP_CONFIG): GameMap {
         improvement: null,
         owner: null,
         baseId: null,
+        supplyPod: false,
       });
     }
   }
@@ -392,6 +394,20 @@ export function generateMap(config: MapConfig = DEFAULT_MAP_CONFIG): GameMap {
       if (nextTile && (nextTile.terrain === Terrain.Ocean || nextTile.terrain === Terrain.DeepOcean)) {
         break;
       }
+    }
+  }
+
+  // Pass 4: Scatter supply pods (Unity wreckage)
+  const podCount = Math.floor(config.width * config.height * 0.015); // ~1.5% of land tiles
+  let podsPlaced = 0;
+  for (let attempt = 0; attempt < podCount * 5 && podsPlaced < podCount; attempt++) {
+    const pq = rng.nextInt(0, config.width - 1);
+    const pr = rng.nextInt(0, config.height - 1);
+    const pk = hexKey(pq, pr);
+    const pt = tiles.get(pk);
+    if (pt && pt.terrain !== Terrain.Ocean && pt.terrain !== Terrain.DeepOcean && !pt.bonus && !pt.supplyPod) {
+      tiles.set(pk, { ...pt, supplyPod: true });
+      podsPlaced++;
     }
   }
 

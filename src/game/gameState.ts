@@ -116,9 +116,9 @@ export function getBuildItem(key: string): BuildItem | undefined {
 }
 
 // Items available for a base to build (check tech + already-built)
-export function getAvailableBuilds(base: Base, discoveredTechs: string[], completedProjects?: Map<string, { owner: number; baseId: string }>): BuildItem[] {
+export function getAvailableBuilds(base: Base, discoveredTechs: string[], completedProjects?: Map<string, { owner: number; baseId: string }>, customDesigns?: UnitDesign[]): BuildItem[] {
   const techSet = new Set(discoveredTechs);
-  return BUILD_CATALOG.filter(item => {
+  const items = BUILD_CATALOG.filter(item => {
     // Check tech prerequisite
     if (item.requiresTech && !techSet.has(item.requiresTech)) return false;
     // Stockpile always available
@@ -131,6 +131,23 @@ export function getAvailableBuilds(base: Base, discoveredTechs: string[], comple
     if (item.category === "project" && completedProjects?.has(item.key)) return false;
     return true;
   });
+
+  // Add custom designs as buildable items
+  if (customDesigns && customDesigns.length > 0) {
+    for (let i = 0; i < customDesigns.length; i++) {
+      const design = customDesigns[i];
+      const stats = getDesignStats(design);
+      items.push({
+        key: `custom_${design.name.replace(/\s+/g, "_").toLowerCase()}_${i + 1}`,
+        name: design.name,
+        category: "unit",
+        cost: stats.cost,
+        description: `Atk:${stats.attack} Def:${stats.defense} Move:${stats.moves} HP:${stats.hp}`,
+      });
+    }
+  }
+
+  return items;
 }
 
 // ─── Base (City) ─────────────────────────────────────────────
@@ -714,6 +731,89 @@ export function moveUnit(state: GameState, unitId: string, toQ: number, toR: num
       newState = { ...newState, log };
     }
   }
+
+  // Supply pod collection
+  if (targetTile.supplyPod) {
+    const podTiles = new Map(newState.map.tiles);
+    podTiles.set(targetKey, { ...targetTile, supplyPod: false });
+    newState = { ...newState, map: { ...newState.map, tiles: podTiles } };
+
+    // Random reward
+    const roll = Math.random();
+    const podLog = [...(newState.log || state.log)];
+
+    if (roll < 0.25) {
+      // Energy cache
+      const amount = 25 + Math.floor(Math.random() * 50);
+      if (unit.owner >= 0) {
+        newState.factions = newState.factions.map((f, i) =>
+          i === unit.owner ? { ...f, energy: f.energy + amount } : f
+        );
+      }
+      podLog.push(`Supply pod recovered: ${amount} energy credits!`);
+    } else if (roll < 0.45) {
+      // Resource bonus — mark tile as bonus
+      const bonusTiles = new Map(newState.map.tiles);
+      const tt = bonusTiles.get(targetKey);
+      if (tt) bonusTiles.set(targetKey, { ...tt, bonus: true });
+      newState = { ...newState, map: { ...newState.map, tiles: bonusTiles } };
+      podLog.push(`Supply pod recovered: Resource bonus at this location!`);
+    } else if (roll < 0.6) {
+      // Tech advance
+      if (unit.owner >= 0) {
+        const faction = newState.factions[unit.owner];
+        if (faction) {
+          const available = getResearchableTechs(faction.discoveredTechs);
+          if (available.length > 0) {
+            const freeTech = available[Math.floor(Math.random() * available.length)];
+            newState.factions = newState.factions.map((f, i) =>
+              i === unit.owner ? { ...f, discoveredTechs: [...f.discoveredTechs, freeTech.key] } : f
+            );
+            podLog.push(`Supply pod recovered: Data core! Free technology: ${freeTech.name}!`);
+          } else {
+            podLog.push(`Supply pod recovered: Data core (no new technology available).`);
+          }
+        }
+      }
+    } else if (roll < 0.75) {
+      // Free unit — spawn a scout nearby
+      const neighbors = hexNeighbors({ q: toQ, r: toR });
+      const emptyNeighbor = neighbors.find(n => {
+        const nt = newState.map.tiles.get(hexKey(n.q, n.r));
+        return nt && nt.terrain !== Terrain.Ocean && nt.terrain !== Terrain.DeepOcean &&
+          !Array.from(newState.units.values()).some(u => u.q === n.q && u.r === n.r);
+      });
+      if (emptyNeighbor) {
+        const freeUnit = createUnit(UnitType.Scout, emptyNeighbor.q, emptyNeighbor.r, unit.owner);
+        const freeUnits = new Map(newState.units);
+        freeUnits.set(freeUnit.id, freeUnit);
+        newState = { ...newState, units: freeUnits };
+        podLog.push(`Supply pod recovered: Survivors found! Scout Patrol joins your forces.`);
+      } else {
+        podLog.push(`Supply pod recovered: Damaged equipment salvaged.`);
+      }
+    } else if (roll < 0.88) {
+      // Mindworm attack!
+      const worm = createUnit(UnitType.Mindworm, toQ, toR, -1);
+      // Place worm on an adjacent tile
+      const neighbors = hexNeighbors({ q: toQ, r: toR });
+      const wormTile = neighbors.find(n => {
+        const nt = newState.map.tiles.get(hexKey(n.q, n.r));
+        return nt && nt.terrain !== Terrain.Ocean && nt.terrain !== Terrain.DeepOcean;
+      });
+      if (wormTile) {
+        const wormUnits = new Map(newState.units);
+        wormUnits.set(worm.id, { ...worm, q: wormTile.q, r: wormTile.r });
+        newState = { ...newState, units: wormUnits };
+        podLog.push(`Supply pod recovered: Mind Worm attack! Hostile lifeform emerges!`);
+      }
+    } else {
+      // Nutrient bonus
+      podLog.push(`Supply pod recovered: Nutritional supplements found.`);
+    }
+
+    newState = { ...newState, log: podLog };
+  }
   
   // Recalculate visibility after move
   if (unit.owner === state.currentFaction) {
@@ -1188,6 +1288,15 @@ export function endTurn(state: GameState): GameState {
           const newUnit = createUnit(item.unitType, base.q, base.r, base.owner);
           newUnits.set(newUnit.id, newUnit);
           log.push(`${base.name}: ${item.name} completed!`);
+        } else if (newCurrentBuild?.startsWith("custom_")) {
+          // Custom designed unit
+          const designIdx = parseInt(newCurrentBuild.split("_").pop() || "0") - 1;
+          const design = newState.customDesigns?.[designIdx];
+          if (design) {
+            const newUnit = createDesignedUnit(design, base.q, base.r, base.owner);
+            newUnits.set(newUnit.id, newUnit);
+            log.push(`${base.name}: ${design.name} completed!`);
+          }
         } else if (item.category === "project") {
           // Secret Project completed!
           if (!newState.completedProjects) {

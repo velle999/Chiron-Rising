@@ -377,6 +377,33 @@ function drawTile(ctx: CanvasRenderingContext2D, center: { x: number; y: number 
     drawImprovement(ctx, center, tile.improvement, size);
   }
 
+  // ── Supply Pod ──
+  if (tile.supplyPod) {
+    const pulse = Math.sin(time * 0.003 + tile.q * 1.1 + tile.r * 0.7) * 0.15 + 0.85;
+    // Glow
+    ctx.fillStyle = `rgba(100, 200, 255, ${0.12 * pulse})`;
+    ctx.beginPath(); ctx.arc(center.x, center.y, size * 0.45, 0, Math.PI * 2); ctx.fill();
+    // Pod body (capsule shape)
+    ctx.fillStyle = `rgba(180, 200, 220, ${0.7 * pulse})`;
+    ctx.beginPath();
+    ctx.moveTo(center.x - size * 0.2, center.y - size * 0.15);
+    ctx.lineTo(center.x + size * 0.2, center.y - size * 0.15);
+    ctx.lineTo(center.x + size * 0.25, center.y + size * 0.05);
+    ctx.lineTo(center.x + size * 0.15, center.y + size * 0.2);
+    ctx.lineTo(center.x - size * 0.15, center.y + size * 0.2);
+    ctx.lineTo(center.x - size * 0.25, center.y + size * 0.05);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = `rgba(100, 200, 255, ${0.6 * pulse})`;
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    // Unity logo (small U)
+    ctx.fillStyle = `rgba(60, 150, 220, ${0.8 * pulse})`;
+    ctx.font = `bold ${size * 0.22}px sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("U", center.x, center.y + size * 0.02);
+  }
+
   ctx.restore();
 }
 

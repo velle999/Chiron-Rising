@@ -8,7 +8,7 @@ import InfoPanel from "./components/InfoPanel";
 import DiplomacyScreen from "./components/DiplomacyScreen";
 import Minimap from "./components/Minimap";
 import { ProductionPrompt, ResearchPrompt, getTurnPrompts, TurnPrompt } from "./components/TurnPrompts";
-import { hexKey } from "./game/hexMap";
+import { hexKey, hexToPixel } from "./game/hexMap";
 import {
   GameState, initializeGame, moveUnit, foundBase, endTurn,
   changeProduction, chooseResearch, changeSocialEngineering,
@@ -261,6 +261,18 @@ export default function App() {
     if (victory.winner !== null && victory.message) {
       setVictoryMessage(victory.message);
     }
+
+    // Auto-select first idle unit (if no prompts)
+    if (prompts.length === 0) {
+      const firstIdle = Array.from(newState.units.values())
+        .find(u => u.owner === newState.currentFaction && u.movesLeft > 0 && !u.orders);
+      if (firstIdle) {
+        newState = { ...newState, selectedUnit: firstIdle.id, selectedTile: hexKey(firstIdle.q, firstIdle.r) };
+        setGameState(newState);
+        const pos = hexToPixel({ q: firstIdle.q, r: firstIdle.r }, 20);
+        setMinimapCameraTarget({ x: pos.x, y: pos.y });
+      }
+    }
   }, [gameState]);
 
   const handleChangeProduction = useCallback((baseId: string, buildKey: string) => {
@@ -347,6 +359,35 @@ export default function App() {
       }
       if (e.key === "w" || e.key === "W") {
         setShowUnitDesigner(true);
+      }
+
+      // Tab = cycle to next idle unit
+      if (e.key === "Tab") {
+        e.preventDefault();
+        if (gameState) {
+          const playerUnits = Array.from(gameState.units.values())
+            .filter(u => u.owner === gameState.currentFaction && u.movesLeft > 0 && !u.orders);
+          if (playerUnits.length > 0) {
+            const currentIdx = playerUnits.findIndex(u => u.id === gameState.selectedUnit);
+            const nextIdx = (currentIdx + 1) % playerUnits.length;
+            const next = playerUnits[nextIdx];
+            const key = hexKey(next.q, next.r);
+            setGameState({ ...gameState, selectedUnit: next.id, selectedTile: key });
+            // Center camera on unit
+            const pos = hexToPixel({ q: next.q, r: next.r }, 20);
+            setMinimapCameraTarget({ x: pos.x, y: pos.y });
+          }
+        }
+      }
+
+      // Space = center camera on selected unit
+      if (e.key === " " && gameState?.selectedUnit) {
+        e.preventDefault();
+        const unit = gameState.units.get(gameState.selectedUnit);
+        if (unit) {
+          const pos = hexToPixel({ q: unit.q, r: unit.r }, 20);
+          setMinimapCameraTarget({ x: pos.x, y: pos.y });
+        }
       }
 
       // Numpad movement for selected unit (pointy-top hex directions)
