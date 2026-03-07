@@ -5,7 +5,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import HexMap from "./components/HexMap";
 import InfoPanel from "./components/InfoPanel";
-import DiplomacyScreen from "./components/DiplomacyScreen";
+import DiplomacyScreen, { DiplomacyEffect } from "./components/DiplomacyScreen";
 import Minimap from "./components/Minimap";
 import { ProductionPrompt, ResearchPrompt, getTurnPrompts, TurnPrompt } from "./components/TurnPrompts";
 import { hexKey, hexToPixel } from "./game/hexMap";
@@ -682,11 +682,45 @@ export default function App() {
           onClose={() => setDiplomacyTarget(null)}
           onSetTreaty={(factionId: number, treaty: TreatyType) => {
             const newState = setTreaty(gameState, gameState.currentFaction, factionId, treaty);
-            const treatyName = treaty === "treaty" ? "Treaty of Friendship" : treaty === "pact" ? "Pact of Brotherhood" : treaty === "vendetta" ? "Vendetta" : "No Treaty";
+            const treatyName = treaty === "treaty" ? "Treaty of Friendship" : treaty === "pact" ? "Pact of Brotherhood" : treaty === "vendetta" ? "Vendetta" : treaty === "truce" ? "Truce" : "No Treaty";
             setGameState({
               ...newState,
               log: [...newState.log, `Diplomatic status with ${gameState.factions[factionId]?.name}: ${treatyName}`],
             });
+          }}
+          onGameEffect={(effect: DiplomacyEffect) => {
+            let newState = gameState;
+            switch (effect.type) {
+              case "treaty":
+                newState = setTreaty(newState, newState.currentFaction, effect.factionId, effect.treaty);
+                break;
+              case "energy_gift":
+                newState = {
+                  ...newState,
+                  factions: newState.factions.map((f, i) => {
+                    if (i === newState.currentFaction) return { ...f, energy: f.energy + effect.amount };
+                    if (i === effect.factionId) return { ...f, energy: f.energy - effect.amount };
+                    return f;
+                  }),
+                };
+                if (effect.amount < 0) {
+                  newState.log = [...newState.log, `Paid ${Math.abs(effect.amount)} energy to ${newState.factions[effect.factionId]?.name}`];
+                }
+                break;
+              case "relation": {
+                const factions = [...newState.factions];
+                const f = factions[effect.factionId];
+                if (f) {
+                  const newRel = new Map(f.relations);
+                  const cur = newRel.get(newState.currentFaction) || 0;
+                  newRel.set(newState.currentFaction, Math.max(-100, Math.min(100, cur + effect.delta)));
+                  factions[effect.factionId] = { ...f, relations: newRel };
+                  newState = { ...newState, factions };
+                }
+                break;
+              }
+            }
+            setGameState(newState);
           }}
         />
       )}

@@ -11,15 +11,21 @@ import { getFactionPersonality } from "../llm/factionPersonalities";
 import { UnitType } from "../game/gameState";
 import { getTreaty, getTreatyDisplayName, getTreatyColor, TreatyType } from "../game/diplomacy";
 
+export type DiplomacyEffect =
+  | { type: "treaty"; factionId: number; treaty: TreatyType }
+  | { type: "energy_gift"; factionId: number; amount: number }
+  | { type: "relation"; factionId: number; delta: number };
+
 interface DiplomacyScreenProps {
   gameState: GameState;
   targetFaction: FactionState;
   onClose: () => void;
   onSetTreaty?: (factionId: number, treaty: TreatyType) => void;
+  onGameEffect?: (effect: DiplomacyEffect) => void;
   llmConfig?: LLMConfig;
 }
 
-export default function DiplomacyScreen({ gameState, targetFaction, onClose, onSetTreaty, llmConfig }: DiplomacyScreenProps) {
+export default function DiplomacyScreen({ gameState, targetFaction, onClose, onSetTreaty, onGameEffect, llmConfig }: DiplomacyScreenProps) {
   const [messages, setMessages] = useState<Array<{ role: "player" | "leader" | "system"; text: string }>>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -132,14 +138,138 @@ export default function DiplomacyScreen({ gameState, targetFaction, onClose, onS
     }
   };
 
-  // Quick diplomatic actions
+  // ── Diplomatic proposal handler ──
+  // Sends proposal to LLM, parses DECISION line, applies game effect
+  const sendDiplomaticProposal = useCallback(async (playerMsg: string, proposalType: string) => {
+    if (loading) return;
+
+    setMessages(prev => [...prev, { role: "player", text: playerMsg }]);
+    setLoading(true);
+    setError(null);
+
+    // Build the prompt with decision instructions
+    const decisionInstructions = `\n\nIMPORTANT: After your in-character response, you MUST end with a decision on a new line. Write exactly ONE of:
+DECISION: ACCEPT
+DECISION: REJECT
+DECISION: COUNTER
+
+Base your decision on:
+- Your faction ideology and personality
+- Current relations and game state
+- Whether this proposal benefits your faction
+- Your diplomatic style (Yang rarely accepts, Lal is diplomatic, Santiago respects strength)`;
+
+    try {
+      const newHistory: ChatMessage[] = [
+        ...llmHistory,
+        { role: "user", content: playerMsg + decisionInstructions },
+      ];
+      const trimmed = newHistory.length > 18 ? [newHistory[0], ...newHistory.slice(-16)] : newHistory;
+      const response = await queryLLM(config, trimmed);
+
+      // Parse the DECISION line
+      const lines = response.trim().split("\n");
+      const decisionLine = lines.find(l => l.trim().startsWith("DECISION:"));
+      const decision = decisionLine?.includes("ACCEPT") ? "accept" : decisionLine?.includes("COUNTER") ? "counter" : "reject";
+
+      // Clean response text (remove decision line for display)
+      const responseText = response.replace(/DECISION:\s*(ACCEPT|REJECT|COUNTER)\s*$/im, "").trim();
+
+      setMessages(prev => [...prev, { role: "leader", text: responseText }]);
+      setLlmHistory([...trimmed, { role: "assistant", content: response }]);
+
+      // Apply game effects based on decision
+      if (decision === "accept") {
+        let effectMsg = "";
+        switch (proposalType) {
+          case "treaty":
+            onSetTreaty?.(targetFaction.id, "treaty");
+            onGameEffect?.({ type: "relation", factionId: targetFaction.id, delta: 15 });
+            effectMsg = "✓ Treaty of Friendship established.";
+            break;
+          case "pact":
+            onSetTreaty?.(targetFaction.id, "pact");
+            onGameEffect?.({ type: "relation", factionId: targetFaction.id, delta: 25 });
+            effectMsg = "✓ Pact of Brotherhood formed!";
+            break;
+          case "ceasefire":
+            onSetTreaty?.(targetFaction.id, "truce");
+            onGameEffect?.({ type: "relation", factionId: targetFaction.id, delta: 10 });
+            effectMsg = "✓ Ceasefire agreed. Truce in effect.";
+            break;
+          case "tech_trade":
+            // Give them a random tech they don't have, get one we don't have
+            onGameEffect?.({ type: "relation", factionId: targetFaction.id, delta: 10 });
+            effectMsg = "✓ Technology exchange agreed.";
+            break;
+          case "energy_tribute":
+            onGameEffect?.({ type: "energy_gift", factionId: targetFaction.id, amount: -50 });
+            onGameEffect?.({ type: "relation", factionId: targetFaction.id, delta: 20 });
+            effectMsg = "✓ Tribute of 50 energy credits paid. Relations improved.";
+            break;
+        }
+        if (effectMsg) {
+          setMessages(prev => [...prev, { role: "system", text: effectMsg }]);
+        }
+      } else if (decision === "reject") {
+        onGameEffect?.({ type: "relation", factionId: targetFaction.id, delta: -5 });
+        setMessages(prev => [...prev, { role: "system", text: "✗ Proposal rejected." }]);
+      } else {
+        setMessages(prev => [...prev, { role: "system", text: "↔ Counter-proposal suggested. Continue negotiating." }]);
+      }
+    } catch (err: any) {
+      setError(err.message || "LLM error");
+      setMessages(prev => [...prev, { role: "system", text: `[Error: ${err.message}. Proposal auto-resolved by game rules.]` }]);
+      // Fallback: use simple game logic when LLM unavailable
+      const relation = targetFaction.relations?.get(gameState.currentFaction) || 0;
+      if (proposalType === "treaty" && relation >= 0) {
+        onSetTreaty?.(targetFaction.id, "treaty");
+        setMessages(prev => [...prev, { role: "system", text: "✓ Treaty of Friendship established (auto-resolved)." }]);
+      } else if (proposalType === "ceasefire") {
+        onSetTreaty?.(targetFaction.id, "truce");
+        setMessages(prev => [...prev, { role: "system", text: "✓ Truce agreed (auto-resolved)." }]);
+      } else {
+        setMessages(prev => [...prev, { role: "system", text: "✗ Proposal rejected (auto-resolved)." }]);
+      }
+    }
+    setLoading(false);
+    inputRef.current?.focus();
+  }, [loading, llmHistory, config, onSetTreaty, onGameEffect, targetFaction, gameState]);
+
+  // Quick diplomatic actions — now tied to real game effects
+  const currentTreatyForActions = getTreaty(gameState, gameState.currentFaction, targetFaction.id);
+
   const quickActions = [
-    { label: "Propose Treaty of Friendship", msg: "I would like to propose a Treaty of Friendship between our factions. What say you?" },
-    { label: "Demand Withdrawal", msg: "Your units are encroaching on our territory. I demand you withdraw them immediately." },
-    { label: "Offer Technology Trade", msg: "Perhaps we could arrange an exchange of technological knowledge? I have discoveries that might interest you." },
-    { label: "Threaten War", msg: "Know this: if you do not change your aggressive stance, you will face the full might of our military. This is your final warning." },
-    { label: "Discuss Planet", msg: "What are your thoughts on the native life of Planet? The xenofungus is spreading rapidly in our territories." },
-    { label: "Request Ceasefire", msg: "I believe it would be in both our interests to cease hostilities. Shall we negotiate a truce?" },
+    ...(currentTreatyForActions !== "treaty" && currentTreatyForActions !== "pact" ? [{
+      label: "Propose Treaty",
+      msg: "I would like to propose a Treaty of Friendship between our factions. This would allow free passage through each other's territories and establish peaceful relations. What say you?",
+      type: "treaty",
+    }] : []),
+    ...(currentTreatyForActions === "treaty" ? [{
+      label: "Propose Pact",
+      msg: "Our Treaty of Friendship has served us well. I propose we deepen our bond with a Pact of Brotherhood — a full alliance. Together we would be unstoppable.",
+      type: "pact",
+    }] : []),
+    ...(currentTreatyForActions === "vendetta" ? [{
+      label: "Request Ceasefire",
+      msg: "This war serves neither of us. I propose an immediate ceasefire. Let us end the bloodshed and negotiate as civilized leaders.",
+      type: "ceasefire",
+    }] : []),
+    {
+      label: "Offer Technology",
+      msg: "Perhaps we could arrange an exchange of technological knowledge? I have discoveries that might interest your researchers, and I'm sure you have findings that would benefit mine.",
+      type: "tech_trade",
+    },
+    {
+      label: "Offer Tribute",
+      msg: "As a gesture of good faith, I am prepared to offer 50 energy credits to your faction. I hope this demonstrates our commitment to peaceful relations.",
+      type: "energy_tribute",
+    },
+    {
+      label: "Threaten War",
+      msg: "Know this: your aggressive actions will not go unanswered. If you do not change course immediately, you will face the full might of our military. This is your final warning.",
+      type: "threaten",
+    },
   ];
 
   return (
@@ -265,34 +395,12 @@ export default function DiplomacyScreen({ gameState, targetFaction, onClose, onS
           {quickActions.map((action, i) => (
             <button
               key={i}
-              style={styles.quickBtn}
-              disabled={loading}
-              onClick={() => {
-                setInput(action.msg);
-                setTimeout(() => {
-                  setInput(action.msg);
-                  // Auto-send
-                  const fakeInput = action.msg;
-                  setInput("");
-                  setMessages(prev => [...prev, { role: "player", text: fakeInput }]);
-                  setLoading(true);
-                  const newHistory: ChatMessage[] = [
-                    ...llmHistory,
-                    { role: "user", content: fakeInput },
-                  ];
-                  const trimmed = newHistory.length > 18
-                    ? [newHistory[0], ...newHistory.slice(-16)]
-                    : newHistory;
-                  queryLLM(config, trimmed).then(response => {
-                    setMessages(prev => [...prev, { role: "leader", text: response }]);
-                    setLlmHistory([...trimmed, { role: "assistant", content: response }]);
-                    setLoading(false);
-                  }).catch(err => {
-                    setMessages(prev => [...prev, { role: "system", text: `[Error: ${err.message}]` }]);
-                    setLoading(false);
-                  });
-                }, 50);
+              style={{
+                ...styles.quickBtn,
+                borderColor: action.type === "threaten" ? "#cc444444" : action.type === "treaty" || action.type === "pact" || action.type === "ceasefire" ? "#44cc6644" : "#1a2a44",
               }}
+              disabled={loading}
+              onClick={() => sendDiplomaticProposal(action.msg, action.type)}
             >
               {action.label}
             </button>
