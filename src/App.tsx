@@ -43,6 +43,7 @@ export default function App() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [showSetup, setShowSetup] = useState(true);
   const [selectedFaction, setSelectedFaction] = useState(0);
+  const [numFactions, setNumFactions] = useState(4);
   const [diplomacyTarget, setDiplomacyTarget] = useState<FactionState | null>(null);
   const [turnPrompts, setTurnPrompts] = useState<TurnPrompt[]>([]);
   const [currentPromptIndex, setCurrentPromptIndex] = useState(0);
@@ -52,6 +53,7 @@ export default function App() {
   const [minimapCameraTarget, setMinimapCameraTarget] = useState<{x:number,y:number}|null>(null);
   const [victoryMessage, setVictoryMessage] = useState<string | null>(null);
   const [showUnitDesigner, setShowUnitDesigner] = useState(false);
+  const [processingTurn, setProcessingTurn] = useState(false);
   const prevLogLength = useRef(0);
   const audioInitialized = useRef(false);
 
@@ -69,7 +71,7 @@ export default function App() {
       audioInitialized.current = true;
     }
 
-    const state = initializeGame(selectedFaction, 4, {
+    const state = initializeGame(selectedFaction, numFactions, {
       width: 48,
       height: 32,
       seed: Date.now(),
@@ -84,13 +86,31 @@ export default function App() {
     // Play opening narration
     setTimeout(() => playOpeningNarration("f"), 500);
 
+    // ── Planetfall: find player's colony pod and center camera on it ──
+    const playerColony = Array.from(state.units.values()).find(
+      u => u.owner === state.currentFaction && u.type === UnitType.Colony
+    );
+    if (playerColony) {
+      // Select the colony pod
+      const colonyKey = hexKey(playerColony.q, playerColony.r);
+      state.selectedUnit = playerColony.id;
+      state.selectedTile = colonyKey;
+      setGameState({ ...state });
+
+      // Center camera on colony pod position after a brief delay
+      setTimeout(() => {
+        const pos = hexToPixel({ q: playerColony.q, r: playerColony.r }, 20);
+        setMinimapCameraTarget({ x: pos.x, y: pos.y });
+      }, 100);
+    }
+
     // Check initial prompts (research needed at game start)
     const prompts = getTurnPrompts(state);
     if (prompts.length > 0) {
       setTurnPrompts(prompts);
       setCurrentPromptIndex(0);
     }
-  }, [selectedFaction]);
+  }, [selectedFaction, numFactions]);
 
   // ─── Tile Click Handler ────────────────────────────────
 
@@ -181,11 +201,15 @@ export default function App() {
   }, [gameState]);
 
   const handleEndTurn = useCallback(() => {
-    if (!gameState) return;
-    const oldLogLen = gameState.log.length;
-    const playerFaction = gameState.factions[gameState.currentFaction];
-    const newState = endTurn(gameState);
-    setGameState(newState);
+    if (!gameState || processingTurn) return;
+    setProcessingTurn(true);
+
+    // Use setTimeout to let the "Processing..." UI render before heavy computation
+    setTimeout(() => {
+      const oldLogLen = gameState.log.length;
+      const playerFaction = gameState.factions[gameState.currentFaction];
+      const newState = endTurn(gameState);
+      setGameState(newState);
 
     // Play sounds for new log entries
     playSoundsForLog(newState.log, oldLogLen);
@@ -275,7 +299,10 @@ export default function App() {
         setMinimapCameraTarget({ x: pos.x, y: pos.y });
       }
     }
-  }, [gameState]);
+
+      setProcessingTurn(false);
+    }, 50);
+  }, [gameState, processingTurn]);
 
   const handleChangeProduction = useCallback((baseId: string, buildKey: string) => {
     if (!gameState) return;
@@ -303,7 +330,7 @@ export default function App() {
     const handler = (e: KeyboardEvent) => {
       if (!gameState) return;
       // Block shortcuts when modals are open
-      if (turnPrompts.length > 0 || diplomacyTarget || showUnitDesigner) return;
+      if (turnPrompts.length > 0 || diplomacyTarget || showUnitDesigner || processingTurn) return;
 
       // Save/Load
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
@@ -424,7 +451,7 @@ export default function App() {
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [gameState, handleEndTurn, handleFoundBase, handleBuildImprovement, handleSetOrders, turnPrompts, diplomacyTarget, showUnitDesigner]);
+  }, [gameState, handleEndTurn, handleFoundBase, handleBuildImprovement, handleSetOrders, turnPrompts, diplomacyTarget, showUnitDesigner, processingTurn]);
 
   // ─── Setup Screen ──────────────────────────────────────
 
@@ -451,6 +478,25 @@ export default function App() {
               >
                 <span style={{ fontWeight: 700 }}>{def.leaderName}</span>
                 <span style={{ fontSize: 11, opacity: 0.6 }}> — {def.name}</span>
+              </button>
+            ))}
+          </div>
+
+          <div style={{ margin: "12px 0", display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ color: "#556677", fontSize: 12, fontFamily: "'Orbitron', sans-serif", letterSpacing: "0.1em" }}>OPPONENTS:</span>
+            {[2, 3, 4, 5, 6, 7].map(n => (
+              <button
+                key={n}
+                style={{
+                  background: numFactions === n ? "#1a2a44" : "transparent",
+                  border: `1px solid ${numFactions === n ? "#88aacc" : "#1a2a44"}`,
+                  color: numFactions === n ? "#88aacc" : "#445566",
+                  padding: "4px 10px", fontSize: 13, cursor: "pointer",
+                  fontFamily: "'Rajdhani', sans-serif", borderRadius: 2,
+                }}
+                onClick={() => setNumFactions(n)}
+              >
+                {n - 1}
               </button>
             ))}
           </div>
@@ -638,6 +684,22 @@ export default function App() {
           setGameState(setSpecialist(gameState, baseId, citizenIndex, specType as SpecialistType));
         }}
       />
+      {/* Processing Turn Overlay */}
+      {processingTurn && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
+          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 800,
+          pointerEvents: "none",
+        }}>
+          <div style={{
+            fontFamily: "'Orbitron', sans-serif", fontSize: 14, color: "#88aacc",
+            letterSpacing: "0.2em", padding: "12px 24px",
+            background: "#0a0e18dd", border: "1px solid #1a2a44", borderRadius: 4,
+          }}>
+            PROCESSING TURN {gameState?.turn || ""}...
+          </div>
+        </div>
+      )}
       {/* Victory Screen */}
       {victoryMessage && (
         <div style={{
