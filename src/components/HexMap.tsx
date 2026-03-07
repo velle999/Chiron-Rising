@@ -472,6 +472,37 @@ function drawImprovement(ctx: CanvasRenderingContext2D, c: { x: number; y: numbe
     ctx.setLineDash([2.5, 2]);
     ctx.beginPath(); ctx.moveTo(-s * 1.1, 0); ctx.lineTo(s * 1.1, 0); ctx.stroke();
     ctx.setLineDash([]);
+  } else if (type === "kelp_farm") {
+    // Kelp — wavy green lines on water
+    ctx.strokeStyle = "#44cc6666";
+    ctx.lineWidth = 1;
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.6, i * s * 0.3);
+      ctx.quadraticCurveTo(-s * 0.2, i * s * 0.3 - s * 0.15, s * 0.2, i * s * 0.3);
+      ctx.quadraticCurveTo(s * 0.4, i * s * 0.3 + s * 0.1, s * 0.6, i * s * 0.3);
+      ctx.stroke();
+    }
+  } else if (type === "mining_platform") {
+    // Oil rig / platform
+    ctx.strokeStyle = "#cc884488";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-s * 0.3, -s * 0.3, s * 0.6, s * 0.6);
+    ctx.beginPath(); ctx.moveTo(0, -s * 0.3); ctx.lineTo(0, -s * 0.6); ctx.stroke();
+    ctx.fillStyle = "#cc884444";
+    ctx.fillRect(-s * 0.1, -s * 0.7, s * 0.2, s * 0.15);
+  } else if (type === "tidal_harness") {
+    // Tidal energy — spinning turbine symbol
+    ctx.strokeStyle = "#ffcc4488";
+    ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.arc(0, 0, s * 0.35, 0, Math.PI * 2); ctx.stroke();
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.quadraticCurveTo(Math.cos(a + 0.5) * s * 0.3, Math.sin(a + 0.5) * s * 0.3, Math.cos(a) * s * 0.35, Math.sin(a) * s * 0.35);
+      ctx.stroke();
+    }
   }
   ctx.restore();
 }
@@ -646,6 +677,98 @@ function drawUnitIcon(ctx: CanvasRenderingContext2D, x: number, y: number, type:
       ctx.lineWidth = 0.8;
       ctx.beginPath(); ctx.moveTo(-s * 0.6, s * 0.05); ctx.lineTo(-s * 0.7, -s * 0.2); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(-s * 0.6, s * 0.05); ctx.lineTo(-s * 0.75, s * 0.2); ctx.stroke();
+      break;
+    }
+    case UnitType.Foil:
+    case UnitType.Cruiser: {
+      // Warship — hull with superstructure
+      const isCruiser = type === UnitType.Cruiser;
+      ctx.fillStyle = color + "55";
+      // Hull
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.55, s * 0.1);
+      ctx.lineTo(-s * 0.4, s * 0.25);
+      ctx.lineTo(s * 0.4, s * 0.25);
+      ctx.lineTo(s * 0.6, s * 0.05);
+      ctx.lineTo(s * 0.4, -s * 0.05);
+      ctx.lineTo(-s * 0.35, -s * 0.05);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      // Superstructure
+      ctx.fillStyle = color + "77";
+      ctx.fillRect(-s * 0.15, -s * 0.25, s * 0.3, s * 0.2);
+      // Gun turret
+      if (isCruiser) {
+        ctx.fillRect(s * 0.15, -s * 0.15, s * 0.15, s * 0.1);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.3;
+        ctx.beginPath(); ctx.moveTo(s * 0.3, -s * 0.1); ctx.lineTo(s * 0.55, -s * 0.15); ctx.stroke();
+      }
+      // Wake lines
+      ctx.strokeStyle = color + "33";
+      ctx.lineWidth = 0.6;
+      ctx.beginPath(); ctx.moveTo(-s * 0.55, s * 0.15); ctx.lineTo(-s * 0.7, s * 0.25); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-s * 0.5, s * 0.22); ctx.lineTo(-s * 0.65, s * 0.3); ctx.stroke();
+      break;
+    }
+    case UnitType.Transport: {
+      // Transport — wider hull, no weapons
+      ctx.fillStyle = color + "55";
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.5, s * 0.05);
+      ctx.lineTo(-s * 0.35, s * 0.3);
+      ctx.lineTo(s * 0.35, s * 0.3);
+      ctx.lineTo(s * 0.55, s * 0.0);
+      ctx.lineTo(s * 0.35, -s * 0.1);
+      ctx.lineTo(-s * 0.3, -s * 0.1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.stroke();
+      // Cargo hold
+      ctx.fillStyle = color + "33";
+      ctx.fillRect(-s * 0.2, -s * 0.05, s * 0.4, s * 0.2);
+      // Flag
+      ctx.fillStyle = color;
+      ctx.fillRect(0, -s * 0.35, s * 0.15, s * 0.1);
+      ctx.strokeStyle = color; ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(0, -s * 0.35); ctx.lineTo(0, -s * 0.1); ctx.stroke();
+      break;
+    }
+    case UnitType.SeaFormer: {
+      // Sea terraformer — work barge
+      ctx.fillStyle = color + "44";
+      ctx.fillRect(-s * 0.4, -s * 0.05, s * 0.8, s * 0.25);
+      ctx.strokeStyle = color; ctx.lineWidth = 1;
+      ctx.strokeRect(-s * 0.4, -s * 0.05, s * 0.8, s * 0.25);
+      // Crane arm
+      ctx.strokeStyle = color + "88"; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(s * 0.1, -s * 0.05); ctx.lineTo(s * 0.2, -s * 0.35); ctx.lineTo(s * 0.4, -s * 0.3); ctx.stroke();
+      break;
+    }
+    case UnitType.SeaLurk: {
+      // Sea lurk (ocean mindworm) — tentacled sea creature
+      ctx.strokeStyle = "#cc2266"; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.5, 0);
+      ctx.quadraticCurveTo(-s * 0.2, -s * 0.3, s * 0.1, 0);
+      ctx.quadraticCurveTo(s * 0.3, s * 0.2, s * 0.5, 0);
+      ctx.stroke();
+      ctx.fillStyle = "#cc226644";
+      ctx.beginPath(); ctx.arc(s * 0.5, 0, s * 0.12, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#ff2266";
+      ctx.beginPath(); ctx.arc(s * 0.5, 0, s * 0.06, 0, Math.PI * 2); ctx.fill();
+      // Tentacles
+      for (let i = 0; i < 3; i++) {
+        ctx.strokeStyle = "#cc226666";
+        ctx.lineWidth = 0.7;
+        ctx.beginPath();
+        ctx.moveTo(-s * 0.5, 0);
+        ctx.quadraticCurveTo(-s * 0.6, -s * 0.15 + i * s * 0.15, -s * 0.7, -s * 0.1 + i * s * 0.1);
+        ctx.stroke();
+      }
       break;
     }
   }

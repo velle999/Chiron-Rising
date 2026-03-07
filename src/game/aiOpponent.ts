@@ -404,6 +404,7 @@ function foundBaseInternal(
     currentBuild: "unit_scout",
     buildProgress: 0,
     workedTiles: [key],
+    specialists: [],
   };
 
   bases.set(baseId, base);

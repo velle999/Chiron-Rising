@@ -187,10 +187,11 @@ chiron-rising/
 | 13 | Custom unit production, Tab unit cycling, Space camera center, auto-select |
 | 14 | Supply pods (exploration rewards), AI diplomacy, resource display, production ETA |
 
+| 15 | Naval units (Foil, Cruiser, Transport, Sea Former), specialists (Doctor/Engineer/Librarian/Empath/Transcendi), sea improvements |
+
 ## Roadmap
 
-- [ ] Naval units and ocean gameplay
-- [ ] Specialists (doctors, engineers, librarians)
+- [ ] Air units and drop pods
 - [ ] Multiplayer (stretch goal)
 
 ---

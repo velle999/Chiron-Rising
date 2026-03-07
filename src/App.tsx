@@ -12,7 +12,8 @@ import { hexKey, hexToPixel } from "./game/hexMap";
 import {
   GameState, initializeGame, moveUnit, foundBase, endTurn,
   changeProduction, chooseResearch, changeSocialEngineering,
-  setUnitOrders, UnitType, FACTION_DEFS, FactionState
+  setUnitOrders, UnitType, FACTION_DEFS, FactionState,
+  setSpecialist, SpecialistType
 } from "./game/gameState";
 import { soundManager, playSoundsForLog } from "./audio/soundSystem";
 import { playTechVoice, playFacilityVoice, playFactionIntro, playOpeningNarration, TECH_VOICE_MAP } from "./audio/voiceSystem";
@@ -587,6 +588,9 @@ export default function App() {
             setDiplomacyTarget(target);
             playFactionIntro(target.key);
           }
+        }}
+        onSetSpecialist={(baseId: string, citizenIndex: number, specType: string) => {
+          setGameState(setSpecialist(gameState, baseId, citizenIndex, specType as SpecialistType));
         }}
       />
       {/* Victory Screen */}

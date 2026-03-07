@@ -42,6 +42,28 @@ export enum UnitType {
   Infantry = "infantry",
   Speeder = "speeder",
   Mindworm = "mindworm",
+  // Naval
+  Foil = "foil",
+  Cruiser = "cruiser",
+  Transport = "transport",
+  SeaFormer = "sea_former",
+  // Special
+  SeaLurk = "sea_lurk",
+}
+
+export type UnitTriad = "land" | "sea" | "air";
+
+function getUnitTriad(type: UnitType): UnitTriad {
+  switch (type) {
+    case UnitType.Foil:
+    case UnitType.Cruiser:
+    case UnitType.Transport:
+    case UnitType.SeaFormer:
+    case UnitType.SeaLurk:
+      return "sea";
+    default:
+      return "land";
+  }
 }
 
 // ─── Production Catalog ──────────────────────────────────────
@@ -64,6 +86,12 @@ export const BUILD_CATALOG: BuildItem[] = [
   { key: "unit_scout",     name: "Scout Patrol",    category: "unit", cost: 8,   description: "Fast exploration unit",        unitType: UnitType.Scout },
   { key: "unit_infantry",  name: "Garrison",        category: "unit", cost: 12,  description: "Standard combat unit",         unitType: UnitType.Infantry },
   { key: "unit_speeder",   name: "Speeder",         category: "unit", cost: 16,  description: "Fast attack vehicle",          unitType: UnitType.Speeder, requiresTech: "doctrine_mobility" },
+
+  // ── Naval Units ──
+  { key: "unit_foil",      name: "Foil Patrol",     category: "unit", cost: 24,  description: "Light naval combat vessel",    unitType: UnitType.Foil, requiresTech: "doctrine_flexibility" },
+  { key: "unit_cruiser",   name: "Cruiser",         category: "unit", cost: 40,  description: "Heavy naval warship",          unitType: UnitType.Cruiser, requiresTech: "doctrine_initiative" },
+  { key: "unit_transport", name: "Transport Foil",  category: "unit", cost: 20,  description: "Carries land units across sea",unitType: UnitType.Transport, requiresTech: "doctrine_flexibility" },
+  { key: "unit_sea_former",name: "Sea Former",      category: "unit", cost: 20,  description: "Builds kelp farms, mining platforms", unitType: UnitType.SeaFormer, requiresTech: "doctrine_flexibility" },
 
   // ── Facilities ──
   { key: "recycling_tanks",    name: "Recycling Tanks",    category: "facility", cost: 40,  maintenance: 0, description: "+1 nutrient, mineral, energy at base square", requiresTech: "biogenetics" },
@@ -152,6 +180,8 @@ export function getAvailableBuilds(base: Base, discoveredTechs: string[], comple
 
 // ─── Base (City) ─────────────────────────────────────────────
 
+export type SpecialistType = "worker" | "doctor" | "engineer" | "librarian" | "empath" | "transcend";
+
 export interface Base {
   id: string;
   name: string;
@@ -166,6 +196,7 @@ export interface Base {
   currentBuild: string | null;   // key currently being built
   buildProgress: number;         // minerals accumulated toward current build
   workedTiles: string[];         // hex keys of tiles being worked
+  specialists: SpecialistType[]; // one entry per specialist citizen (not working a tile)
 }
 
 // ─── Unit ────────────────────────────────────────────────────
@@ -335,12 +366,17 @@ let nextBaseId = 1;
 
 export function createUnit(type: UnitType, q: number, r: number, owner: number): Unit {
   const stats: Record<UnitType, { moves: number; hp: number; atk: number; def: number }> = {
-    [UnitType.Colony]:    { moves: 1, hp: 10, atk: 0, def: 1 },
-    [UnitType.Former]:    { moves: 1, hp: 10, atk: 0, def: 1 },
-    [UnitType.Scout]:     { moves: 1, hp: 10, atk: 1, def: 1 },
-    [UnitType.Infantry]:  { moves: 1, hp: 10, atk: 2, def: 2 },
-    [UnitType.Speeder]:   { moves: 2, hp: 10, atk: 3, def: 1 },
-    [UnitType.Mindworm]:  { moves: 1, hp: 10, atk: 2, def: 2 },
+    [UnitType.Colony]:     { moves: 1, hp: 10, atk: 0, def: 1 },
+    [UnitType.Former]:     { moves: 1, hp: 10, atk: 0, def: 1 },
+    [UnitType.Scout]:      { moves: 1, hp: 10, atk: 1, def: 1 },
+    [UnitType.Infantry]:   { moves: 1, hp: 10, atk: 2, def: 2 },
+    [UnitType.Speeder]:    { moves: 2, hp: 10, atk: 3, def: 1 },
+    [UnitType.Mindworm]:   { moves: 1, hp: 10, atk: 2, def: 2 },
+    [UnitType.Foil]:       { moves: 4, hp: 10, atk: 2, def: 2 },
+    [UnitType.Cruiser]:    { moves: 6, hp: 10, atk: 4, def: 3 },
+    [UnitType.Transport]:  { moves: 4, hp: 10, atk: 0, def: 2 },
+    [UnitType.SeaFormer]:  { moves: 3, hp: 10, atk: 0, def: 1 },
+    [UnitType.SeaLurk]:    { moves: 4, hp: 10, atk: 3, def: 3 },
   };
 
   const s = stats[type];
@@ -663,9 +699,19 @@ export function moveUnit(state: GameState, unitId: string, toQ: number, toR: num
   const targetTile = state.map.tiles.get(targetKey);
   if (!targetTile) return state;
 
-  // Can't move into deep ocean (unless naval unit, TBD)
-  if (targetTile.terrain === Terrain.DeepOcean || targetTile.terrain === Terrain.Ocean) {
-    return state;
+  // Terrain restrictions based on unit triad
+  const triad = getUnitTriad(unit.type);
+  if (triad === "land") {
+    // Land units can't enter ocean (but can enter shelf if embarked — not implemented yet)
+    if (targetTile.terrain === Terrain.DeepOcean || targetTile.terrain === Terrain.Ocean || targetTile.terrain === Terrain.Shelf) {
+      return state;
+    }
+  } else if (triad === "sea") {
+    // Naval units can only move on water tiles (Ocean, DeepOcean, Shelf)
+    if (targetTile.terrain !== Terrain.Ocean && targetTile.terrain !== Terrain.DeepOcean && targetTile.terrain !== Terrain.Shelf) {
+      // Exception: can enter a coastal base
+      if (!targetTile.baseId) return state;
+    }
   }
 
   // Check distance
@@ -953,6 +999,7 @@ export function foundBase(state: GameState, unitId: string, name: string): GameS
     currentBuild: "unit_scout",    // Default: build a scout first
     buildProgress: 0,
     workedTiles: [key],
+    specialists: [],
   };
 
   const newBases = new Map(state.bases);
@@ -1065,6 +1112,70 @@ export function changeSocialEngineering(
   return { ...state, factions: newFactions, log };
 }
 
+// ─── Specialist Management ───────────────────────────────────
+
+export function setSpecialist(state: GameState, baseId: string, citizenIndex: number, specType: SpecialistType): GameState {
+  const base = state.bases.get(baseId);
+  if (!base || base.owner !== state.currentFaction) return state;
+
+  // Citizens = workedTiles + specialists
+  const totalCitizens = base.workedTiles.length + (base.specialists?.length || 0);
+  if (citizenIndex >= base.population) return state;
+
+  const newSpecs = [...(base.specialists || [])];
+
+  if (citizenIndex < base.workedTiles.length) {
+    // Converting a tile worker to a specialist — remove the tile, add specialist
+    const newWorked = [...base.workedTiles];
+    newWorked.splice(citizenIndex, 1);
+    newSpecs.push(specType);
+    const newBases = new Map(state.bases);
+    newBases.set(baseId, { ...base, workedTiles: newWorked, specialists: newSpecs });
+    return { ...state, bases: newBases };
+  } else {
+    // Changing an existing specialist type
+    const specIdx = citizenIndex - base.workedTiles.length;
+    if (specIdx < newSpecs.length) {
+      newSpecs[specIdx] = specType;
+    }
+    const newBases = new Map(state.bases);
+    newBases.set(baseId, { ...base, specialists: newSpecs });
+    return { ...state, bases: newBases };
+  }
+}
+
+export function removeSpecialist(state: GameState, baseId: string, specIndex: number): GameState {
+  const base = state.bases.get(baseId);
+  if (!base || base.owner !== state.currentFaction) return state;
+
+  const newSpecs = [...(base.specialists || [])];
+  if (specIndex >= newSpecs.length) return state;
+  newSpecs.splice(specIndex, 1);
+
+  // Auto-assign back to best available tile
+  const workedSet = new Set(base.workedTiles);
+  let bestTile: string | null = null;
+  let bestValue = -1;
+  for (let dq = -2; dq <= 2; dq++) {
+    for (let dr = Math.max(-2, -dq - 2); dr <= Math.min(2, -dq + 2); dr++) {
+      const tq = base.q + dq;
+      const tr = base.r + dr;
+      const tk = hexKey(tq, tr);
+      if (workedSet.has(tk)) continue;
+      const tt = state.map.tiles.get(tk);
+      if (!tt || tt.terrain === Terrain.Ocean || tt.terrain === Terrain.DeepOcean || tt.terrain === Terrain.Shelf) continue;
+      const res = getTileResources(tt);
+      const val = res.nutrients * 3 + res.minerals * 2 + res.energy;
+      if (val > bestValue) { bestValue = val; bestTile = tk; }
+    }
+  }
+
+  const newWorked = bestTile ? [...base.workedTiles, bestTile] : [...base.workedTiles];
+  const newBases = new Map(state.bases);
+  newBases.set(baseId, { ...base, workedTiles: newWorked, specialists: newSpecs });
+  return { ...state, bases: newBases };
+}
+
 // ─── Unit Orders ─────────────────────────────────────────────
 
 export function setUnitOrders(state: GameState, unitId: string, orders: string | null): GameState {
@@ -1155,6 +1266,20 @@ export function endTurn(state: GameState): GameState {
     // Positive industry = cheaper builds (more effective minerals)
     const industryMultiplier = 1.0 + (factors.industry * 0.1); // +/-10% per level
 
+    // ── Specialist Output ──
+    // Specialists don't work tiles but produce flat bonuses
+    const specs = base.specialists || [];
+    for (const spec of specs) {
+      switch (spec) {
+        case "doctor":     totalNutrients += 0; totalEnergy += 2; break; // +2 psych (energy proxy) + reduces 1 drone
+        case "engineer":   totalMinerals += 3; break;                     // +3 minerals
+        case "librarian":  totalEnergy += 3; break;                       // +3 labs (energy proxy)
+        case "empath":     totalEnergy += 2; break;                       // +2 psych, reduces 2 drones
+        case "transcend":  totalEnergy += 4; totalNutrients += 1; totalMinerals += 1; break; // +4 labs +1N +1M
+        // "worker" = default, produces nothing extra (same as tile worker with no tile)
+      }
+    }
+
     // Subtract consumption (2 nutrients per pop)
     const consumed = base.population * 2;
     const surplus = totalNutrients - consumed;
@@ -1166,6 +1291,14 @@ export function endTurn(state: GameState): GameState {
     // Base drones = pop - 3 (simplified: every citizen above 3 is a drone)
     let drones = Math.max(0, newPop - 3);
     let talents = 1; // Base 1 talent
+
+    // Specialists reduce drones
+    const doctorCount = specs.filter(s => s === "doctor").length;
+    const empathCount = specs.filter(s => s === "empath").length;
+    const transcendCount = specs.filter(s => s === "transcend").length;
+    drones = Math.max(0, drones - doctorCount);       // Doctors: -1 drone each
+    drones = Math.max(0, drones - empathCount * 2);   // Empaths: -2 drones each
+    talents += transcendCount;                          // Transcendi add talents
 
     // Recreation Commons: -2 drones
     if (base.facilities.includes("recreation_commons")) drones = Math.max(0, drones - 2);

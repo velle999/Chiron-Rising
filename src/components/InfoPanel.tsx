@@ -22,9 +22,10 @@ interface InfoPanelProps {
   onChangeSE: (category: string, choiceKey: string) => void;
   onSetOrders: (orders: string | null) => void;
   onContactFaction: (factionId: number) => void;
+  onSetSpecialist?: (baseId: string, citizenIndex: number, specType: string) => void;
 }
 
-export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, onEndTurn, onChangeProduction, onChooseResearch, onChangeSE, onSetOrders, onContactFaction }: InfoPanelProps) {
+export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, onEndTurn, onChangeProduction, onChooseResearch, onChangeSE, onSetOrders, onContactFaction, onSetSpecialist }: InfoPanelProps) {
   const { selectedTile, selectedUnit, map, units, bases, factions, currentFaction, turn, year, log } = gameState;
   const playerFaction = factions[currentFaction];
 
@@ -235,6 +236,50 @@ export default function InfoPanel({ gameState, onFoundBase, onBuildImprovement, 
           <div style={{ ...styles.dim, fontSize: 10 }}>
             Facilities: {baseAtTile.facilities.filter(f => !f.startsWith("sp_")).join(", ") || "none"}
           </div>
+
+          {/* Specialists */}
+          {baseAtTile.owner === currentFaction && baseAtTile.population > 1 && (
+            <div style={{ marginTop: 4, borderTop: "1px solid #1a2a44", paddingTop: 4 }}>
+              <div style={{ fontSize: 9, color: "#556677", fontFamily: "'Orbitron', sans-serif", letterSpacing: "0.1em", marginBottom: 3 }}>
+                CITIZENS ({baseAtTile.workedTiles.length} workers, {(baseAtTile.specialists || []).length} specialists)
+              </div>
+              {/* Current specialists */}
+              {(baseAtTile.specialists || []).map((spec, i) => {
+                const specInfo: Record<string, {label: string; color: string; desc: string}> = {
+                  doctor:    { label: "Doctor",     color: "#44cc66", desc: "+2⚡ -1 drone" },
+                  engineer:  { label: "Engineer",   color: "#cc8844", desc: "+3⛏" },
+                  librarian: { label: "Librarian",  color: "#4488dd", desc: "+3⚡ labs" },
+                  empath:    { label: "Empath",     color: "#cc44cc", desc: "+2⚡ -2 drones" },
+                  transcend: { label: "Transcendi", color: "#ffcc44", desc: "+4⚡ +1🌿 +1⛏ +talent" },
+                  worker:    { label: "Worker",     color: "#667788", desc: "no bonus" },
+                };
+                const info = specInfo[spec] || specInfo.worker;
+                return (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10, marginBottom: 1 }}>
+                    <span style={{ color: info.color }}>{info.label} <span style={{ color: "#556677" }}>{info.desc}</span></span>
+                  </div>
+                );
+              })}
+              {/* Add specialist buttons */}
+              {baseAtTile.workedTiles.length > 1 && onSetSpecialist && (
+                <div style={{ display: "flex", gap: 2, flexWrap: "wrap", marginTop: 3 }}>
+                  {(["doctor", "engineer", "librarian", "empath"] as const).map(specType => {
+                    const labels: Record<string, string> = { doctor: "👨‍⚕️Doc", engineer: "🔧Eng", librarian: "📚Lib", empath: "🧠Emp" };
+                    return (
+                      <button
+                        key={specType}
+                        style={{ ...styles.actionBtn, fontSize: 9, padding: "1px 4px" }}
+                        onClick={() => onSetSpecialist(baseAtTile.id, baseAtTile.workedTiles.length - 1, specType)}
+                        title={`Convert a tile worker to ${specType}`}
+                      >
+                        {labels[specType]}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Current Production */}
           {baseAtTile.owner === currentFaction && (() => {
