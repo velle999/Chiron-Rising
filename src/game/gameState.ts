@@ -47,6 +47,11 @@ export enum UnitType {
   Cruiser = "cruiser",
   Transport = "transport",
   SeaFormer = "sea_former",
+  // Air
+  Needlejet = "needlejet",
+  Chopper = "chopper",
+  // Drop
+  DropInfantry = "drop_infantry",
   // Special
   SeaLurk = "sea_lurk",
 }
@@ -61,6 +66,9 @@ function getUnitTriad(type: UnitType): UnitTriad {
     case UnitType.SeaFormer:
     case UnitType.SeaLurk:
       return "sea";
+    case UnitType.Needlejet:
+    case UnitType.Chopper:
+      return "air";
     default:
       return "land";
   }
@@ -92,6 +100,11 @@ export const BUILD_CATALOG: BuildItem[] = [
   { key: "unit_cruiser",   name: "Cruiser",         category: "unit", cost: 40,  description: "Heavy naval warship",          unitType: UnitType.Cruiser, requiresTech: "doctrine_initiative" },
   { key: "unit_transport", name: "Transport Foil",  category: "unit", cost: 20,  description: "Carries land units across sea",unitType: UnitType.Transport, requiresTech: "doctrine_flexibility" },
   { key: "unit_sea_former",name: "Sea Former",      category: "unit", cost: 20,  description: "Builds kelp farms, mining platforms", unitType: UnitType.SeaFormer, requiresTech: "doctrine_flexibility" },
+
+  // ── Air Units ──
+  { key: "unit_needlejet",name: "Needlejet",       category: "unit", cost: 36,  description: "Fast air superiority fighter (8 moves, must return to base)", unitType: UnitType.Needlejet, requiresTech: "doctrine_air_power" },
+  { key: "unit_chopper",  name: "Chopper",          category: "unit", cost: 36,  description: "Attack helicopter (8 moves, no range limit)", unitType: UnitType.Chopper, requiresTech: "mind_machine_interface" },
+  { key: "unit_drop",     name: "Drop Infantry",    category: "unit", cost: 20,  description: "Can paradrop anywhere within 8 tiles of a friendly base", unitType: UnitType.DropInfantry, requiresTech: "mind_machine_interface" },
 
   // ── Facilities ──
   { key: "recycling_tanks",    name: "Recycling Tanks",    category: "facility", cost: 40,  maintenance: 0, description: "+1 nutrient, mineral, energy at base square", requiresTech: "biogenetics" },
@@ -402,6 +415,9 @@ export function createUnit(type: UnitType, q: number, r: number, owner: number):
     [UnitType.Transport]:  { moves: 4, hp: 10, atk: 0, def: 2 },
     [UnitType.SeaFormer]:  { moves: 3, hp: 10, atk: 0, def: 1 },
     [UnitType.SeaLurk]:    { moves: 4, hp: 10, atk: 3, def: 3 },
+    [UnitType.Needlejet]:  { moves: 8, hp: 10, atk: 4, def: 2 },
+    [UnitType.Chopper]:    { moves: 8, hp: 10, atk: 4, def: 2 },
+    [UnitType.DropInfantry]:{ moves: 1, hp: 10, atk: 3, def: 3 },
   };
 
   const s = stats[type];
@@ -423,10 +439,10 @@ export function createDesignedUnit(design: UnitDesign, q: number, r: number, own
     infantry: UnitType.Infantry,
     speeder: UnitType.Speeder,
     hovertank: UnitType.Speeder,
-    foil: UnitType.Scout,
-    cruiser: UnitType.Scout,
-    needlejet: UnitType.Scout,
-    copter: UnitType.Scout,
+    foil: UnitType.Foil,
+    cruiser: UnitType.Cruiser,
+    needlejet: UnitType.Needlejet,
+    copter: UnitType.Chopper,
   };
   const type = typeMap[design.chassis] || UnitType.Infantry;
 
@@ -727,24 +743,59 @@ export function moveUnit(state: GameState, unitId: string, toQ: number, toR: num
   // Terrain restrictions based on unit triad
   const triad = getUnitTriad(unit.type);
   if (triad === "land") {
-    // Land units can't enter ocean (but can enter shelf if embarked — not implemented yet)
+    // Land units can't enter ocean
     if (targetTile.terrain === Terrain.DeepOcean || targetTile.terrain === Terrain.Ocean || targetTile.terrain === Terrain.Shelf) {
       return state;
     }
   } else if (triad === "sea") {
-    // Naval units can only move on water tiles (Ocean, DeepOcean, Shelf)
+    // Naval units can only move on water tiles
     if (targetTile.terrain !== Terrain.Ocean && targetTile.terrain !== Terrain.DeepOcean && targetTile.terrain !== Terrain.Shelf) {
-      // Exception: can enter a coastal base
       if (!targetTile.baseId) return state;
     }
   }
+  // Air units can move over ANY terrain — no restrictions
 
-  // Check distance
+  // Check distance — air units and drop pods can move multiple tiles
   const dist = Math.max(
     Math.abs(unit.q - toQ),
     Math.abs(unit.r - toR),
     Math.abs((-unit.q - unit.r) - (-toQ - toR))
   );
+
+  // Drop pods: can paradrop up to 8 tiles from a friendly base (uses all moves)
+  if (unit.type === UnitType.DropInfantry && dist > 1) {
+    // Check if unit is in/adjacent to a friendly base
+    const nearBase = Array.from(state.bases.values()).some(b =>
+      b.owner === unit.owner && Math.max(Math.abs(b.q - unit.q), Math.abs(b.r - unit.r), Math.abs((-b.q - b.r) - (-unit.q - unit.r))) <= 1
+    );
+    if (!nearBase || dist > 8) return state;
+    if (targetTile.terrain === Terrain.Ocean || targetTile.terrain === Terrain.DeepOcean) return state;
+
+    // Paradrop! Uses all movement
+    const newUnits = new Map(state.units);
+    // Check for enemy at target
+    const enemyAtDrop = Array.from(state.units.values()).find(
+      u => u.q === toQ && u.r === toR && u.owner !== unit.owner && u.owner !== -1
+    );
+    if (enemyAtDrop) {
+      // Drop into combat — place unit at target first
+      newUnits.set(unitId, { ...unit, q: toQ, r: toR, movesLeft: 0 });
+      const combatState = { ...state, units: newUnits };
+      return resolveCombat(combatState, unitId, enemyAtDrop.id);
+    }
+    newUnits.set(unitId, { ...unit, q: toQ, r: toR, movesLeft: 0 });
+    const log = [...state.log, `Drop infantry paradropped to (${toQ}, ${toR})!`];
+    let newState = { ...state, units: newUnits, log };
+    // Recalculate visibility
+    if (unit.owner === state.currentFaction) {
+      const newVisible = calculateVisibility(newState, state.currentFaction);
+      const newExplored = updateExplored(state.explored, state.currentFaction, newVisible);
+      newState = { ...newState, visible: newVisible, explored: newExplored };
+    }
+    return newState;
+  }
+
+  // Normal units: max 1 tile per move action
   if (dist > 1) return state;
 
   // Check for enemy units
@@ -756,20 +807,21 @@ export function moveUnit(state: GameState, unitId: string, toQ: number, toR: num
     return resolveCombat(state, unitId, enemyAtTarget.id);
   }
 
-  // Move cost: roads = 1/3 move, flat/rolling = 1, hills = 2, fungus = 3
+  // Move cost: roads = free, flat/rolling = 1, hills = 2, fungus = 3
+  // Air units always cost 1
   const sourceTile = state.map.tiles.get(hexKey(unit.q, unit.r));
   let moveCost = 1;
 
-  if (targetTile.road) {
-    // Roads: 1/3 movement point (effectively free for most units)
+  if (triad === "air") {
+    moveCost = 1; // Air units fly over everything at constant speed
+  } else if (targetTile.road) {
     moveCost = 0;
   } else if (targetTile.fungus) {
     moveCost = 3;
   } else if (targetTile.terrain === Terrain.Hills || targetTile.terrain === Terrain.Mountains) {
     moveCost = 2;
   }
-  // Road-to-road movement is free
-  if (sourceTile?.road && targetTile.road) moveCost = 0;
+  if (triad !== "air" && sourceTile?.road && targetTile.road) moveCost = 0;
 
   // Minimum 1 move spent unless road, but always allow at least one step
   const actualCost = Math.max(moveCost, targetTile.road ? 0 : 1);

@@ -51,6 +51,12 @@ npm run tauri build      # Production build (.exe / .dmg / .AppImage)
 - Unit Designer (Workshop): combine weapons (Atk 1–12), armor (Def 1–5), chassis (infantry/speeder/hovertank/foil/cruiser/needlejet/chopper), reactors (10–40 HP)
 - Unit automation: auto-former, auto-scout, auto-patrol, sentry, hold, fortify
 
+### Air Units & Drop Pods
+- Needlejet: 8 moves, flies over all terrain (Atk 4, Def 2), requires Doctrine: Air Power
+- Chopper: 8 moves, attack helicopter, no range limit, requires Mind/Machine Interface
+- Drop Infantry: paradrops up to 8 tiles from a friendly base in a single action, can drop into combat
+- Air units ignore terrain movement costs (always 1 per tile)
+
 ### Naval Units
 - Foil Patrol (light combat), Cruiser (heavy warship), Transport Foil (carries land units), Sea Former (builds kelp farms, mining platforms, tidal harnesses)
 - Sea Lurk (ocean mindworm variant)
@@ -214,10 +220,11 @@ chiron-rising/
 | 15 | Naval units (Foil/Cruiser/Transport/Sea Former), specialists, sea improvements |
 | 16 | UI polish: color-coded log, status bar, context-sensitive keyboard hints |
 | 17 | LLM-driven game effects: diplomatic proposals → ACCEPT/REJECT → treaties/energy/relations, faction-specific base names, secret project exclusivity fix |
+| 18 | Planetfall intro, opponent count selector, performance fix (contact detection), freeze fix |
+| 19 | Air units (Needlejet, Chopper), Drop Infantry (paradrop 8 range), AI builds air/naval, unit designer maps air chassis |
 
 ## Roadmap
 
-- [ ] Air units and drop pods
 - [ ] Multiplayer (stretch goal)
 
 ---

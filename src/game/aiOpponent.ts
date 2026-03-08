@@ -353,6 +353,24 @@ function chooseAIProduction(
       else if (numMilitary < ourBases.length * 2) score = 10;
       else score = 5;
     }
+    // Air units: build a few when available
+    else if (item.key === "unit_needlejet" || item.key === "unit_chopper") {
+      const numAir = ourUnits.filter(u => u.type === UnitType.Needlejet || u.type === UnitType.Chopper).length;
+      if (numAir < 2) score = 15;
+      else score = 4;
+    }
+    // Drop infantry: occasionally
+    else if (item.key === "unit_drop") {
+      const numDrop = ourUnits.filter(u => u.type === UnitType.DropInfantry).length;
+      if (numDrop < 1) score = 12;
+      else score = 3;
+    }
+    // Naval: build if we have coastal bases
+    else if (item.key === "unit_foil" || item.key === "unit_cruiser") {
+      const numNaval = ourUnits.filter(u => u.type === UnitType.Foil || u.type === UnitType.Cruiser).length;
+      if (numNaval < 2) score = 12;
+      else score = 4;
+    }
     // Facilities: score by value
     else if (item.category === "facility") {
       if (item.key === "recycling_tanks" && !base.facilities.includes("recycling_tanks")) score = 22;

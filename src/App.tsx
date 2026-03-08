@@ -635,6 +635,12 @@ export default function App() {
             if (unit.type === UnitType.Former || unit.type === UnitType.SeaFormer) {
               return <span>F:farm · M:mine · S:solar · P:forest · R:road · A:auto · Tab:next · Enter:end turn</span>;
             }
+            if (unit.type === UnitType.Needlejet || unit.type === UnitType.Chopper) {
+              return <span>Click distant tile to fly · A:auto · L:sentry · Tab:next · Enter:end turn · 8 moves/turn</span>;
+            }
+            if (unit.type === UnitType.DropInfantry) {
+              return <span>Click to paradrop (8 range from base) · A:auto · Tab:next · Enter:end turn</span>;
+            }
             return <span>A:auto · L:sentry · H:hold · Shift+F:fortify · Tab:next · Space:center · Enter:end turn</span>;
           })()}
         </div>

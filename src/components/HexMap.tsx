@@ -771,6 +771,95 @@ function drawUnitIcon(ctx: CanvasRenderingContext2D, x: number, y: number, type:
       }
       break;
     }
+    case UnitType.Needlejet: {
+      // Swept-wing fighter jet silhouette
+      ctx.fillStyle = color + "55";
+      // Fuselage
+      ctx.beginPath();
+      ctx.moveTo(s * 0.6, 0);
+      ctx.lineTo(s * 0.1, -s * 0.08);
+      ctx.lineTo(-s * 0.5, -s * 0.05);
+      ctx.lineTo(-s * 0.6, 0);
+      ctx.lineTo(-s * 0.5, s * 0.05);
+      ctx.lineTo(s * 0.1, s * 0.08);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.stroke();
+      // Wings (swept back)
+      ctx.fillStyle = color + "44";
+      ctx.beginPath();
+      ctx.moveTo(s * 0.1, -s * 0.08);
+      ctx.lineTo(-s * 0.2, -s * 0.45);
+      ctx.lineTo(-s * 0.35, -s * 0.35);
+      ctx.lineTo(-s * 0.15, -s * 0.05);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(s * 0.1, s * 0.08);
+      ctx.lineTo(-s * 0.2, s * 0.45);
+      ctx.lineTo(-s * 0.35, s * 0.35);
+      ctx.lineTo(-s * 0.15, s * 0.05);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // Tail fin
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.45, 0);
+      ctx.lineTo(-s * 0.6, -s * 0.2);
+      ctx.lineTo(-s * 0.55, 0);
+      ctx.stroke();
+      break;
+    }
+    case UnitType.Chopper: {
+      // Helicopter silhouette
+      ctx.fillStyle = color + "55";
+      // Body
+      ctx.beginPath();
+      ctx.moveTo(s * 0.4, 0);
+      ctx.lineTo(s * 0.15, -s * 0.2);
+      ctx.lineTo(-s * 0.25, -s * 0.2);
+      ctx.lineTo(-s * 0.4, -s * 0.05);
+      ctx.lineTo(-s * 0.4, s * 0.1);
+      ctx.lineTo(-s * 0.2, s * 0.2);
+      ctx.lineTo(s * 0.2, s * 0.2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.stroke();
+      // Main rotor
+      ctx.strokeStyle = color + "88";
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(-s * 0.5, -s * 0.25); ctx.lineTo(s * 0.5, -s * 0.25); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-s * 0.2, -s * 0.4); ctx.lineTo(s * 0.3, -s * 0.1); ctx.stroke();
+      // Tail boom
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(-s * 0.4, 0); ctx.lineTo(-s * 0.65, 0); ctx.stroke();
+      // Tail rotor
+      ctx.beginPath(); ctx.moveTo(-s * 0.65, -s * 0.12); ctx.lineTo(-s * 0.65, s * 0.12); ctx.stroke();
+      break;
+    }
+    case UnitType.DropInfantry: {
+      // Soldier with parachute indicator
+      ctx.fillStyle = color + "55";
+      // Body (same as infantry but smaller)
+      ctx.fillRect(-s * 0.12, -s * 0.1, s * 0.24, s * 0.3);
+      ctx.beginPath(); ctx.arc(0, -s * 0.2, s * 0.11, 0, Math.PI * 2); ctx.fill();
+      // Parachute arc above
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(0, -s * 0.45, s * 0.3, Math.PI * 0.15, Math.PI * 0.85);
+      ctx.stroke();
+      // Chute lines
+      ctx.lineWidth = 0.6;
+      ctx.beginPath(); ctx.moveTo(-s * 0.25, -s * 0.3); ctx.lineTo(-s * 0.1, -s * 0.1); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(s * 0.25, -s * 0.3); ctx.lineTo(s * 0.1, -s * 0.1); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, -s * 0.45); ctx.lineTo(0, -s * 0.15); ctx.stroke();
+      // Legs
+      ctx.strokeStyle = color; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(-s * 0.04, s * 0.2); ctx.lineTo(-s * 0.15, s * 0.45); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(s * 0.04, s * 0.2); ctx.lineTo(s * 0.12, s * 0.45); ctx.stroke();
+      break;
+    }
   }
 
   ctx.restore();
